@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/federico-pepe/ableton-push-hack/core/hackcfg"
 	"github.com/federico-pepe/ableton-push-hack/core/httpx"
 	"github.com/federico-pepe/ableton-push-hack/core/sse"
+	"github.com/rgeissen/push-hack-stacks/surface"
 )
 
 const defaultPort = 7711
@@ -50,9 +52,17 @@ func main() {
 
 	broker := sse.NewBroker[map[string]string](32, true)
 	eng := newEngine(broker.Broadcast)
+	man, err := surface.ParseManifest(moduleJSON)
+	if err != nil {
+		log.Fatalf("module.json: %v", err)
+	}
+	scr := newScreen(eng, man)
+	var scrDone sync.WaitGroup
+	scrDone.Add(1)
+	go func() { defer scrDone.Done(); scr.run(ctx.Done()) }()
 
 	// HTTP first: the panel answers during the boot-settle wait.
-	srv := httpx.NewServer(fmt.Sprintf(":%d", cfg.Port), routes(eng, broker))
+	srv := httpx.NewServer(fmt.Sprintf(":%d", cfg.Port), routes(eng, broker, scr))
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("http: %v", err)
@@ -82,7 +92,8 @@ func main() {
 	if err := eng.Run(ctx, hackDir, config, newNotesOut(out)); err != nil {
 		log.Fatalf("engine: %v", err)
 	}
-	in.Close() // ends ReadLoop
+	in.Close()     // ends ReadLoop
+	scrDone.Wait() // the display is back with Live before we go
 	// An open event stream never finishes on its own; give it a moment.
 	shut, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

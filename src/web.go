@@ -61,7 +61,7 @@ func panelPage() string {
 	return remoteShim + panelHTML
 }
 
-func routes(e *Engine, broker *sse.Broker[map[string]string]) http.Handler {
+func routes(e *Engine, broker *sse.Broker[map[string]string], scr *screen) http.Handler {
 	page := panelPage()
 	mux := http.NewServeMux()
 
@@ -118,6 +118,33 @@ func routes(e *Engine, broker *sse.Broker[map[string]string]) http.Handler {
 			ch <- m // the full picture first, then changes
 		}
 		sse.Serve(w, r, ch, func(m map[string]string) ([]byte, error) { return json.Marshal(m) })
+	})
+
+	// The Push display: {"on": true, "tab": 2}. tab is the bank (0 MAIN ..
+	// 5 CLIP, 6 PATTERNS) until the top buttons choose it.
+	mux.HandleFunc("POST /api/screen", func(w http.ResponseWriter, r *http.Request) {
+		body := struct {
+			On  bool `json:"on"`
+			Tab *int `json:"tab"`
+		}{}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&body); err != nil {
+			http.Error(w, `want {"on": bool, "tab": n}`, http.StatusBadRequest)
+			return
+		}
+		tab := -1
+		if body.Tab != nil {
+			tab = *body.Tab
+		}
+		if err := scr.Set(body.On, tab); err != nil {
+			http.Error(w, "push-manager: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		on, t := scr.State()
+		httpx.JSON(w, map[string]any{"on": on, "tab": t})
+	})
+	mux.HandleFunc("GET /api/screen", func(w http.ResponseWriter, r *http.Request) {
+		on, t := scr.State()
+		httpx.JSON(w, map[string]any{"on": on, "tab": t})
 	})
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
