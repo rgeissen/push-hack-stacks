@@ -1,0 +1,1408 @@
+{
+  "id": "stacks",
+  "name": "Stacks",
+  "abbrev": "SK",
+  "version": "0.2.0",
+  "builtin": true,
+  "description": "Chord progressions drawn on a staff. Write one, hear it on a Move track, and let Move record it.",
+  "author": "Schwung",
+  "component_type": "tool",
+  "dsp": "dsp.so",
+  "ui": "ui.js",
+  "web_ui": "web_ui.html",
+  "tool_config": {
+    "interactive": true,
+    "skip_file_browser": true,
+    "overtake": true
+  },
+  "capabilities": {
+    "midi_out": true,
+    "suspend_keeps_js": true,
+    "button_passthrough": [
+      85,
+      86
+    ],
+    "component_type": "tool",
+    "chain_params": [
+      {
+        "key": "sel",
+        "name": "Chord",
+        "short_name": "Chord",
+        "type": "int",
+        "min": 1,
+        "max": 16,
+        "default": 1,
+        "step": 1
+      },
+      {
+        "key": "root",
+        "name": "Root",
+        "short_name": "Root",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "C1",
+          "C#1",
+          "D1",
+          "D#1",
+          "E1",
+          "F1",
+          "F#1",
+          "G1",
+          "G#1",
+          "A1",
+          "A#1",
+          "B1",
+          "C2",
+          "C#2",
+          "D2",
+          "D#2",
+          "E2",
+          "F2",
+          "F#2",
+          "G2",
+          "G#2",
+          "A2",
+          "A#2",
+          "B2",
+          "C3",
+          "C#3",
+          "D3",
+          "D#3",
+          "E3",
+          "F3",
+          "F#3",
+          "G3",
+          "G#3",
+          "A3",
+          "A#3",
+          "B3",
+          "C4",
+          "C#4",
+          "D4",
+          "D#4",
+          "E4",
+          "F4",
+          "F#4",
+          "G4",
+          "G#4",
+          "A4",
+          "A#4",
+          "B4",
+          "C5",
+          "C#5",
+          "D5",
+          "D#5",
+          "E5",
+          "F5",
+          "F#5",
+          "G5",
+          "G#5",
+          "A5",
+          "A#5",
+          "B5"
+        ],
+        "default": 36
+      },
+      {
+        "key": "degree",
+        "name": "Scale Degree",
+        "short_name": "Deg",
+        "options_as_string": true,
+        "type": "enum",
+        "access": "write",
+        "options": [
+          "I",
+          "II",
+          "III",
+          "IV",
+          "V",
+          "VI",
+          "VII",
+          "rest"
+        ],
+        "default": 0
+      },
+      {
+        "key": "coct",
+        "name": "Chord Oct",
+        "short_name": "Oct",
+        "type": "int",
+        "min": 1,
+        "max": 5,
+        "default": 4,
+        "step": 1
+      },
+      {
+        "key": "family",
+        "name": "Shape Family",
+        "short_name": "Fam",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "5th",
+          "triad",
+          "6th",
+          "7th",
+          "9th",
+          "ext"
+        ],
+        "default": 1
+      },
+      {
+        "key": "shape",
+        "name": "Chord Shape",
+        "short_name": "Shape",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "rest",
+          "note",
+          "5",
+          "oct",
+          "maj",
+          "min",
+          "dim",
+          "aug",
+          "sus2",
+          "sus4",
+          "6",
+          "m6",
+          "69",
+          "maj7",
+          "min7",
+          "dom7",
+          "m7b5",
+          "dim7",
+          "mMaj7",
+          "7sus4",
+          "7sus2",
+          "aug7",
+          "maj7#5",
+          "7b5",
+          "add9",
+          "madd9",
+          "maj9",
+          "min9",
+          "9",
+          "7b9",
+          "7#9",
+          "m9b5",
+          "11",
+          "m11",
+          "maj11",
+          "13",
+          "maj13",
+          "m13"
+        ],
+        "default": 4
+      },
+      {
+        "key": "inv",
+        "name": "Inversion",
+        "short_name": "Inv",
+        "type": "int",
+        "min": -3,
+        "max": 3,
+        "default": 0,
+        "step": 1
+      },
+      {
+        "key": "len",
+        "name": "Length",
+        "short_name": "Len",
+        "type": "int",
+        "min": 1,
+        "max": 64,
+        "default": 8,
+        "step": 1
+      },
+      {
+        "key": "off",
+        "name": "Offset",
+        "short_name": "Off",
+        "type": "int",
+        "min": 0,
+        "max": 15,
+        "default": 0,
+        "step": 1
+      },
+      {
+        "key": "ccolour",
+        "name": "Colour",
+        "short_name": "Col",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "close",
+          "open",
+          "drop2",
+          "drop3",
+          "drop2+4",
+          "shell",
+          "rootless",
+          "quartal",
+          "spread",
+          "cluster"
+        ],
+        "default": 0
+      },
+      {
+        "key": "cstrum",
+        "name": "Strum",
+        "short_name": "Strm",
+        "type": "int",
+        "min": 0,
+        "max": 100,
+        "default": 0,
+        "step": 1
+      },
+      {
+        "key": "cvel",
+        "name": "Chord Vel",
+        "short_name": "CVel",
+        "type": "int",
+        "min": -63,
+        "max": 63,
+        "default": 0,
+        "step": 1
+      },
+      {
+        "key": "cgate",
+        "name": "Chord Gate",
+        "short_name": "CGat",
+        "type": "int",
+        "min": -50,
+        "max": 50,
+        "default": 0,
+        "step": 1
+      },
+      {
+        "key": "cmute",
+        "name": "Mute",
+        "short_name": "Mute",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "off",
+          "on"
+        ],
+        "default": 0
+      },
+      {
+        "key": "rhythm",
+        "name": "Rhythm",
+        "short_name": "Rhy",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "hold",
+          "half",
+          "quarter",
+          "eighth",
+          "16th",
+          "offbeat",
+          "dotted",
+          "push",
+          "tresillo",
+          "son 3-2",
+          "son 2-3",
+          "rumba",
+          "bossa",
+          "baiao",
+          "montuno",
+          "charl",
+          "charl 2",
+          "shuffle",
+          "comp",
+          "gallop",
+          "drive",
+          "anthem",
+          "garage",
+          "broken",
+          "backbeat",
+          "deep stab",
+          "after kick",
+          "gate",
+          "two-step",
+          "one drop",
+          "heartbeat",
+          "in three",
+          "and four",
+          "anticipate",
+          "cascara"
+        ],
+        "default": 0
+      },
+      {
+        "key": "ctrans",
+        "name": "Transpose",
+        "short_name": "Trns",
+        "type": "int",
+        "min": -12,
+        "max": 12,
+        "default": 0,
+        "step": 1
+      },
+      {
+        "key": "genre",
+        "name": "Genre",
+        "short_name": "Gen",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "none",
+          "Pop",
+          "Rock",
+          "Metal",
+          "Jazz",
+          "Blues",
+          "Soul",
+          "Gospel",
+          "Funk",
+          "R&B",
+          "Bossa",
+          "Latin",
+          "House",
+          "Melodic",
+          "Lo-fi",
+          "Reggae",
+          "Country",
+          "Cinematic"
+        ],
+        "default": 0
+      },
+      {
+        "key": "progression",
+        "name": "Progression",
+        "short_name": "Prog",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "none",
+          "Axis",
+          "Sad Axis",
+          "Doo-wop",
+          "Pachelbel",
+          "Royal Road",
+          "Emotional",
+          "Bittersweet",
+          "Creep",
+          "Falling",
+          "Rising minor",
+          "Diamonds",
+          "Crazy",
+          "Sensitive 7",
+          "I-IV-V",
+          "Mixolydian",
+          "Grunge",
+          "Anthem",
+          "bVII descent",
+          "Mario",
+          "Minor rock",
+          "Thrash",
+          "Power Metal",
+          "Doom",
+          "Phrygian",
+          "Diabolus",
+          "Iron",
+          "Neoclassical",
+          "ii-V-I",
+          "Minor ii-V",
+          "Rhythm A",
+          "Turnaround",
+          "Coltrane",
+          "Tritone",
+          "Bird Blues",
+          "Modal",
+          "Circle",
+          "A Train",
+          "Passing dim",
+          "Ragtime",
+          "Minor turn",
+          "Autumn",
+          "12-bar",
+          "Quick IV",
+          "Minor blues",
+          "8-bar",
+          "Blues turn",
+          "Slow 9ths",
+          "Neo-soul",
+          "Montuno",
+          "iii-vi-ii-V",
+          "Slow jam",
+          "Two of Us",
+          "Silky",
+          "Mediants",
+          "Plagal",
+          "Shouting",
+          "Walk-up",
+          "Amen",
+          "6-2-5-1",
+          "Sunday",
+          "Pass through",
+          "Four five six",
+          "JB vamp",
+          "Funk turn",
+          "P-Funk",
+          "Clav",
+          "Chameleon",
+          "Two-chord",
+          "Minor lift",
+          "Quiet storm",
+          "Borrowed iv 7",
+          "Purple",
+          "Ipanema",
+          "Wave",
+          "Desafinado",
+          "Corcovado",
+          "Blue bossa",
+          "Guajira",
+          "Bolero",
+          "Salsa",
+          "Descarga",
+          "Deep vamp",
+          "Two-bar",
+          "Filter",
+          "Garage",
+          "Feel it",
+          "Deep two",
+          "Reflective",
+          "Dorian vamp",
+          "MAW",
+          "Descending 7",
+          "Late night",
+          "Ninths",
+          "Sunrise",
+          "Piano house",
+          "Prog lift",
+          "Soulful",
+          "Afterlife",
+          "Hypnotic",
+          "Anjuna",
+          "Mysterious",
+          "Haunting",
+          "Endless fall",
+          "Dark pedal",
+          "Lifter",
+          "Uplift",
+          "Suspended",
+          "Prog minor",
+          "Add nines",
+          "Nostalgia",
+          "Study 2-5-1-4",
+          "Drift",
+          "Tape",
+          "Rainy",
+          "Stairs",
+          "Descent",
+          "Sinking",
+          "Skank",
+          "Roots minor",
+          "Rockers",
+          "Boot scoot",
+          "Train",
+          "Bluegrass",
+          "Andalusian",
+          "Aeolian",
+          "Dorian",
+          "Picardy",
+          "Ostinato",
+          "Lament",
+          "Sorrow",
+          "Elegy",
+          "Hope",
+          "Interstellar",
+          "Pirates",
+          "Leia",
+          "Lydian lift",
+          "Ideal",
+          "Gothic",
+          "Neapolitan",
+          "Breath",
+          "Folia",
+          "Passamezzo"
+        ],
+        "default": 0
+      },
+      {
+        "key": "common",
+        "name": "Common Prog",
+        "short_name": "Cmn",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "none",
+          "I-V-vi-IV",
+          "vi-IV-I-V",
+          "I-vi-IV-V",
+          "I-IV-V",
+          "I-IV-I-V",
+          "ii-V-I",
+          "I-V-IV",
+          "I-iii-IV-V",
+          "vi-V-IV-V",
+          "i-VI-III-VII",
+          "i-iv-v",
+          "i-VII-VI-VII"
+        ],
+        "default": 0
+      },
+      {
+        "key": "uncommon",
+        "name": "Uncommon",
+        "short_name": "Unc",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "none",
+          "I-bIII-IV-iv",
+          "Phrygian",
+          "Lydian II",
+          "Backdoor",
+          "bVI-bVII-I",
+          "i-v-bVI-bVII",
+          "Chrom desc",
+          "Borrowed IV",
+          "Secondary V",
+          "i-bVI-iv-V",
+          "Double plagal",
+          "Aug lift",
+          "Tritone col"
+        ],
+        "default": 0
+      },
+      {
+        "key": "colour",
+        "name": "Colour",
+        "short_name": "Col",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "close",
+          "open",
+          "drop2",
+          "drop3",
+          "drop2+4",
+          "shell",
+          "rootless",
+          "quartal",
+          "spread",
+          "cluster"
+        ],
+        "default": 0
+      },
+      {
+        "key": "grouping",
+        "name": "Voice Grouping",
+        "short_name": "Grp",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "none",
+          "dynamic",
+          "dyn +1oct",
+          "dyn +2oct",
+          "C1-B2",
+          "C2-B3",
+          "C3-B4",
+          "open 1",
+          "open 2",
+          "open 3",
+          "guitar",
+          "drop 2",
+          "drop 3",
+          "drop 4",
+          "drop 2+3",
+          "drop 2+4"
+        ],
+        "default": 0
+      },
+      {
+        "key": "scale",
+        "name": "Scale",
+        "short_name": "Scale",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "Chromatic",
+          "Major",
+          "Minor",
+          "Dorian",
+          "Phrygian",
+          "Lydian",
+          "Mixolydian",
+          "Locrian",
+          "HarmMinor",
+          "MelMinor",
+          "PentMaj",
+          "PentMin",
+          "Blues"
+        ],
+        "default": 2
+      },
+      {
+        "key": "key",
+        "name": "Key",
+        "short_name": "Key",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "C",
+          "C#",
+          "D",
+          "D#",
+          "E",
+          "F",
+          "F#",
+          "G",
+          "G#",
+          "A",
+          "A#",
+          "B"
+        ],
+        "default": 9
+      },
+      {
+        "key": "steps",
+        "name": "Chords",
+        "short_name": "Chrds",
+        "type": "int",
+        "min": 1,
+        "max": 16,
+        "default": 4,
+        "step": 1
+      },
+      {
+        "key": "rate",
+        "name": "New Chord Len",
+        "short_name": "Rte",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "2 bar",
+          "1 bar",
+          "1/2",
+          "1/4"
+        ],
+        "default": 1
+      },
+      {
+        "key": "run",
+        "name": "Run",
+        "short_name": "Run",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "off",
+          "on"
+        ],
+        "default": 1
+      },
+      {
+        "key": "octave",
+        "name": "Clip Octave",
+        "short_name": "Oct",
+        "type": "int",
+        "min": -2,
+        "max": 2,
+        "default": 0,
+        "step": 1
+      },
+      {
+        "key": "transpose",
+        "name": "Clip Transpose",
+        "short_name": "Trans",
+        "type": "int",
+        "min": -12,
+        "max": 12,
+        "default": 0,
+        "step": 1
+      },
+      {
+        "key": "velocity",
+        "name": "Velocity",
+        "short_name": "Vel",
+        "type": "int",
+        "min": 1,
+        "max": 127,
+        "default": 100,
+        "step": 1
+      },
+      {
+        "key": "gate",
+        "name": "Gate",
+        "short_name": "Gate",
+        "type": "int",
+        "min": 5,
+        "max": 100,
+        "default": 90,
+        "step": 1
+      },
+      {
+        "key": "hum_vel",
+        "name": "Human Vel",
+        "short_name": "HuVel",
+        "type": "int",
+        "min": 0,
+        "max": 100,
+        "default": 0,
+        "step": 1
+      },
+      {
+        "key": "roll_vel",
+        "name": "Randomize Vel",
+        "short_name": "RndVel",
+        "options_as_string": true,
+        "type": "enum",
+        "access": "write",
+        "options": [
+          "off",
+          "on"
+        ],
+        "default": 0
+      },
+      {
+        "key": "hum_time",
+        "name": "Human Time",
+        "short_name": "HuTim",
+        "type": "int",
+        "min": 0,
+        "max": 100,
+        "default": 0,
+        "step": 1
+      },
+      {
+        "key": "roll_time",
+        "name": "Randomize Time",
+        "short_name": "RndTim",
+        "options_as_string": true,
+        "type": "enum",
+        "access": "write",
+        "options": [
+          "off",
+          "on"
+        ],
+        "default": 0
+      },
+      {
+        "key": "swing",
+        "name": "Swing",
+        "short_name": "Swng",
+        "type": "int",
+        "min": 0,
+        "max": 75,
+        "default": 0,
+        "step": 1
+      },
+      {
+        "key": "lanes",
+        "name": "Note Lanes",
+        "short_name": "Lanes",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "scale",
+          "diatonic"
+        ],
+        "default": 0
+      },
+      {
+        "key": "preview",
+        "name": "Preview",
+        "short_name": "Prev",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "off",
+          "chord",
+          "loop"
+        ],
+        "default": 0
+      },
+      {
+        "key": "read",
+        "name": "Read Clip",
+        "short_name": "Read",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "off",
+          "on"
+        ],
+        "default": 0,
+        "access": "write"
+      },
+      {
+        "key": "read_mode",
+        "name": "Read Mode",
+        "short_name": "RdMod",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "replace",
+          "append"
+        ],
+        "default": 0
+      },
+      {
+        "key": "read_track",
+        "name": "Read Track",
+        "short_name": "RdT",
+        "type": "int",
+        "min": 1,
+        "max": 4,
+        "default": 1,
+        "step": 1
+      },
+      {
+        "key": "defoct",
+        "name": "Octave Default",
+        "short_name": "Oct",
+        "type": "int",
+        "min": 1,
+        "max": 5,
+        "default": 3,
+        "step": 1
+      },
+      {
+        "key": "bars",
+        "name": "Clip Bars",
+        "short_name": "Bars",
+        "type": "int",
+        "min": 1,
+        "max": 16,
+        "default": 4,
+        "step": 1
+      },
+      {
+        "key": "stamp",
+        "name": "Stamp Clip",
+        "short_name": "Stamp",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "off",
+          "on"
+        ],
+        "default": 0,
+        "access": "write"
+      },
+      {
+        "key": "clear",
+        "name": "Clear",
+        "short_name": "Clear",
+        "options_as_string": true,
+        "type": "enum",
+        "options": [
+          "off",
+          "on"
+        ],
+        "default": 0,
+        "access": "write"
+      },
+      {
+        "key": "pat_store",
+        "name": "Store Pattern",
+        "short_name": "PSt",
+        "type": "int",
+        "min": 1,
+        "max": 16,
+        "default": 1,
+        "step": 1
+      },
+      {
+        "key": "pat_recall",
+        "name": "Recall Pattern",
+        "short_name": "PRc",
+        "type": "int",
+        "min": 1,
+        "max": 16,
+        "default": 1,
+        "step": 1
+      },
+      {
+        "key": "pat_delete",
+        "name": "Delete Pattern",
+        "short_name": "PDl",
+        "type": "int",
+        "min": 1,
+        "max": 16,
+        "default": 1,
+        "step": 1
+      },
+      {
+        "key": "play",
+        "name": "Play Chord",
+        "short_name": "Play",
+        "options_as_string": true,
+        "type": "enum",
+        "access": "write",
+        "options": [
+          "off",
+          "on"
+        ],
+        "default": 0
+      },
+      {
+        "key": "duplicate",
+        "name": "Duplicate",
+        "short_name": "Dup",
+        "options_as_string": true,
+        "type": "enum",
+        "access": "write",
+        "options": [
+          "off",
+          "on"
+        ],
+        "default": 0
+      },
+      {
+        "key": "stretch",
+        "name": "Double Length",
+        "short_name": "Dbl",
+        "options_as_string": true,
+        "type": "enum",
+        "access": "write",
+        "options": [
+          "off",
+          "on"
+        ],
+        "default": 0
+      },
+      {
+        "key": "compress",
+        "name": "Half Length",
+        "short_name": "Hlf",
+        "options_as_string": true,
+        "type": "enum",
+        "access": "write",
+        "options": [
+          "off",
+          "on"
+        ],
+        "default": 0
+      },
+      {
+        "key": "undo",
+        "name": "Undo",
+        "short_name": "Und",
+        "options_as_string": true,
+        "type": "enum",
+        "access": "write",
+        "options": [
+          "off",
+          "on"
+        ],
+        "default": 0
+      },
+      {
+        "key": "redo",
+        "name": "Redo",
+        "short_name": "Red",
+        "options_as_string": true,
+        "type": "enum",
+        "access": "write",
+        "options": [
+          "off",
+          "on"
+        ],
+        "default": 0
+      },
+      {
+        "key": "insert",
+        "name": "Insert Chord",
+        "short_name": "Ins",
+        "options_as_string": true,
+        "type": "enum",
+        "access": "write",
+        "options": [
+          "off",
+          "on"
+        ],
+        "default": 0
+      },
+      {
+        "key": "remove",
+        "name": "Delete Chord",
+        "short_name": "Del",
+        "options_as_string": true,
+        "type": "enum",
+        "access": "write",
+        "options": [
+          "off",
+          "on"
+        ],
+        "default": 0
+      }
+    ],
+    "shape_families": [
+      {
+        "name": "5th",
+        "first": 0,
+        "count": 4
+      },
+      {
+        "name": "triad",
+        "first": 4,
+        "count": 6
+      },
+      {
+        "name": "6th",
+        "first": 10,
+        "count": 3
+      },
+      {
+        "name": "7th",
+        "first": 13,
+        "count": 11
+      },
+      {
+        "name": "9th",
+        "first": 24,
+        "count": 8
+      },
+      {
+        "name": "ext",
+        "first": 32,
+        "count": 6
+      }
+    ],
+    "genre_progressions": [
+      {
+        "name": "none",
+        "first": 0,
+        "count": 1
+      },
+      {
+        "name": "Pop",
+        "first": 1,
+        "count": 13
+      },
+      {
+        "name": "Rock",
+        "first": 14,
+        "count": 7
+      },
+      {
+        "name": "Metal",
+        "first": 21,
+        "count": 7
+      },
+      {
+        "name": "Jazz",
+        "first": 28,
+        "count": 14
+      },
+      {
+        "name": "Blues",
+        "first": 42,
+        "count": 6
+      },
+      {
+        "name": "Soul",
+        "first": 48,
+        "count": 7
+      },
+      {
+        "name": "Gospel",
+        "first": 55,
+        "count": 8
+      },
+      {
+        "name": "Funk",
+        "first": 63,
+        "count": 5
+      },
+      {
+        "name": "R&B",
+        "first": 68,
+        "count": 5
+      },
+      {
+        "name": "Bossa",
+        "first": 73,
+        "count": 5
+      },
+      {
+        "name": "Latin",
+        "first": 78,
+        "count": 4
+      },
+      {
+        "name": "House",
+        "first": 82,
+        "count": 16
+      },
+      {
+        "name": "Melodic",
+        "first": 98,
+        "count": 12
+      },
+      {
+        "name": "Lo-fi",
+        "first": 110,
+        "count": 8
+      },
+      {
+        "name": "Reggae",
+        "first": 118,
+        "count": 3
+      },
+      {
+        "name": "Country",
+        "first": 121,
+        "count": 3
+      },
+      {
+        "name": "Cinematic",
+        "first": 124,
+        "count": 19
+      }
+    ]
+  },
+  "ui_hierarchy": {
+    "pad_layout": "chromatic",
+    "child_index_param": "sel",
+    "levels": {
+      "root": {
+        "name": "Stacks",
+        "params": [
+          {
+            "key": "sel"
+          },
+          {
+            "key": "scale"
+          },
+          {
+            "key": "key"
+          },
+          {
+            "key": "defoct"
+          },
+          {
+            "key": "steps"
+          },
+          {
+            "key": "rate"
+          },
+          {
+            "key": "bars"
+          },
+          {
+            "label": "Start",
+            "level": "start"
+          },
+          {
+            "label": "Chord",
+            "level": "chord"
+          },
+          {
+            "label": "Voice",
+            "level": "voice"
+          },
+          {
+            "label": "Feel",
+            "level": "feel"
+          },
+          {
+            "label": "Clip",
+            "level": "clip"
+          },
+          {
+            "key": "grouping"
+          },
+          {
+            "key": "lanes"
+          }
+        ],
+        "knobs": [
+          "sel",
+          "scale",
+          "key",
+          "defoct",
+          "steps",
+          "rate",
+          "bars",
+          "grouping",
+          "lanes"
+        ]
+      },
+      "chord": {
+        "name": "Chord",
+        "params": [
+          {
+            "key": "root"
+          },
+          {
+            "key": "coct"
+          },
+          {
+            "key": "family"
+          },
+          {
+            "key": "shape"
+          },
+          {
+            "key": "inv"
+          },
+          {
+            "key": "len"
+          },
+          {
+            "key": "off"
+          },
+          {
+            "key": "cvel"
+          }
+        ],
+        "knobs": [
+          "root",
+          "coct",
+          "family",
+          "shape",
+          "inv",
+          "len",
+          "off",
+          "cvel"
+        ]
+      },
+      "voice": {
+        "name": "Voice",
+        "params": [
+          {
+            "key": "ccolour"
+          },
+          {
+            "key": "cstrum"
+          },
+          {
+            "key": "cgate"
+          },
+          {
+            "key": "cmute"
+          },
+          {
+            "key": "rhythm"
+          },
+          {
+            "key": "ctrans"
+          }
+        ],
+        "knobs": [
+          "ccolour",
+          "cstrum",
+          "cgate",
+          "cmute",
+          "rhythm",
+          "ctrans"
+        ]
+      },
+      "feel": {
+        "name": "Feel",
+        "params": [
+          {
+            "key": "preview"
+          },
+          {
+            "key": "velocity"
+          },
+          {
+            "key": "gate"
+          },
+          {
+            "key": "swing"
+          },
+          {
+            "key": "hum_vel"
+          },
+          {
+            "key": "roll_vel"
+          },
+          {
+            "key": "hum_time"
+          },
+          {
+            "key": "roll_time"
+          }
+        ],
+        "knobs": [
+          "preview",
+          "velocity",
+          "gate",
+          "swing",
+          "hum_vel",
+          "roll_vel",
+          "hum_time",
+          "roll_time"
+        ]
+      },
+      "clip": {
+        "name": "Clip",
+        "params": [
+          {
+            "key": "read"
+          },
+          {
+            "key": "read_mode"
+          },
+          {
+            "key": "stamp"
+          },
+          {
+            "key": "clear"
+          },
+          {
+            "key": "transpose"
+          },
+          {
+            "key": "octave"
+          },
+          {
+            "key": "run"
+          },
+          {
+            "key": "undo"
+          }
+        ],
+        "knobs": [
+          "read",
+          "read_mode",
+          "stamp",
+          "clear",
+          "transpose",
+          "octave",
+          "run",
+          "undo"
+        ]
+      },
+      "start": {
+        "name": "Start",
+        "params": [
+          {
+            "key": "genre"
+          },
+          {
+            "key": "progression"
+          },
+          {
+            "key": "common"
+          },
+          {
+            "key": "uncommon"
+          },
+          {
+            "key": "colour"
+          }
+        ],
+        "knobs": [
+          "genre",
+          "progression",
+          "common",
+          "uncommon",
+          "colour"
+        ]
+      }
+    }
+  }
+}

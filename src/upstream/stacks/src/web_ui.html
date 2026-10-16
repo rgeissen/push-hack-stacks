@@ -1,0 +1,2205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1,user-scalable=no">
+<title>Stacks</title>
+<!--
+  STACKS — Remote UI
+  ═══════════════════════════════════════════════════════════════════
+  A browser panel for the chord-progression MIDI FX, served by
+  schwung-manager into a sandboxed iframe.
+
+  THE THESIS: the iPad is the score, the Move is the instrument.
+
+  Which decides what this is NOT. The auto-generated panel under
+  "Interface: Default" already exposes all 53 parameters, so another
+  53 sliders would be worth nothing. This shows the MUSIC: the roll
+  owns the page, and the controls sit beside it.
+
+  FOUR RULES EVERYTHING FOLLOWS FROM.
+
+  1. THREE ACCENTS, ONE MEANING EACH. Gold is material you wrote,
+     cyan is live, violet is you. Absence is the ABSENCE of colour —
+     a muted chord recedes to a grey outline; it is not an error, so
+     no red and no strikethrough. That is also the language the Move's
+     own 1-bit staff uses, so both surfaces agree.
+
+  2. WHERE A PARAMETER HAS A SHAPE, THE CONTROL DRAWS THAT SHAPE.
+     A rhythm is a pattern, not one of 24 words. A root is a keyboard,
+     not 60 buttons. Where a parameter is genuinely a quantity —
+     Strum, Chord Vel — it stays a slider, because a diagram there
+     would be decoration.
+
+  3. THE TABS ARE THE BANKS. Same six names in the same order as
+     Shift+Jog on the hardware, so what you learn on one surface
+     transfers. Inventing a second grouping is how a module gets
+     confusing.
+
+  4. NO WEBFONTS. The iPad is usually on the Move's own network with
+     no route to the internet, so a font <link> fails silently and
+     drops the page to Times. Character comes from weight, tracking
+     and scale on the system stack.
+-->
+<style>
+:root{
+  --ground:#0B0E13; --panel:#131922; --raised:#1B2230; --line:#28313D;
+  --ink:#EAF0F6; --dim:#8092A3; --faint:#4B5765; --hush:#5A6675;
+  --gold:#F2A33C; --cyan:#4FD1E0; --violet:#8B7BE8; --warn:#E86A7C;
+  --tap:52px;
+  --safe-l:env(safe-area-inset-left,0px); --safe-r:env(safe-area-inset-right,0px);
+  --safe-b:env(safe-area-inset-bottom,0px);
+  /* THE KEYBOARD GUTTER'S WIDTH, and the strip's left inset is derived from
+     it below. The roll takes its left edge from the strip's content box, so
+     declaring the gutter once here keeps the notes, the bars and the chord
+     cards on one x-origin -- widen the gutter and all three move together. */
+  --gutter:clamp(30px,3.6vw,44px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+/* THE UA'S [hidden] RULE LOSES TO A CLASS. `.hint{display:flex}` is one
+   specificity class above `[hidden]{display:none}`, so setting .hidden on the
+   empty-state panel did nothing at all and "Four empty bars" stayed painted
+   over a progression that was no longer empty. Anything toggled with .hidden
+   needs this, so it is stated once, globally, rather than per element. */
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
+body{
+  background:var(--ground);color:var(--ink);
+  font:500 15px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;
+  padding-left:var(--safe-l);padding-right:var(--safe-r);
+  display:grid;grid-template-columns:1fr clamp(292px,31vw,392px);
+  /* minmax(0,1fr), never 1fr: a grid track sized `1fr` still floors at
+     min-content, so the row grew to the rail's full content height, the
+     page outgrew the viewport by 245px and .pane's overflow-y never
+     engaged. Same rule as the min-width:0 below, on the other axis. */
+  grid-template-rows:minmax(0,1fr);
+}
+/* WIDTH ONLY -- never orientation. This panel is also embedded in an iframe
+   whose HEIGHT the parent sets from the height this page reports, so an
+   orientation query reads a box this page itself controls: a tall frame reads
+   as portrait, portrait stacks, stacking makes the content taller, the taller
+   height is reported back, and the frame is portrait for good. Embedded in the
+   Schwung Manager it settled at a 2817px column every time. Width is set by
+   the parent's layout and cannot be fed back, so it is the safe axis -- and it
+   still catches the case orientation was added for, since an iPad held upright
+   is 768-834pt wide and lands under this breakpoint anyway. */
+@media (max-width:900px){
+  body{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto;overflow-y:auto}
+}
+button{font:inherit;color:inherit;border:0;background:none;padding:0}
+
+/* ── left: the score ─────────────────────────────────────────── */
+.left{display:flex;flex-direction:column;min-width:0;min-height:0;border-right:1px solid var(--line)}
+.top{display:flex;align-items:center;gap:16px;padding:11px 16px;flex:0 0 auto;
+  border-bottom:1px solid var(--line);background:linear-gradient(180deg,#141A24,#0E131A)}
+.brand{font:800 18px/1 -apple-system,system-ui,sans-serif;letter-spacing:-.02em}
+.brand small{display:block;font:600 8px/1 ui-monospace,monospace;letter-spacing:.24em;
+  color:var(--faint);margin-top:5px}
+/*
+ * PLAY THE BUFFER. This drives `preview` (off <-> loop), which free-runs the
+ * progression without Move's transport -- the point being that the panel makes
+ * sound on its own, with the Move across the room. It lived at position 7 of
+ * 12 on the CLIP bank, next to `clear`.
+ *
+ * It reports `preview`, NOT whether anything is sounding: the dot beside the
+ * chips already carries that, and it is the honest one, because a progression
+ * also runs from Move's clock and from a held chord. A button that claimed to
+ * be the whole truth would show Stop for a state it cannot stop.
+ */
+/* Play, undo, redo and delete are ONE group, so they are one size and one
+   stroke weight. Text glyphs could not give that: a hairline U+21B6 beside a
+   solid U+25B6 reads as two different sets of controls that happen to sit
+   together. Drawn instead, at 2px in currentColor, so the row is coherent and
+   the colour still comes from the button state. */
+.xport{margin-left:14px;width:38px;height:38px;flex:0 0 auto;border-radius:10px;
+  background:var(--raised);border:1px solid var(--line);color:var(--ink);
+  display:flex;align-items:center;justify-content:center;
+  transition:background .12s,color .12s,border-color .12s}
+.xport:active{transform:scale(.94)}
+.xport[aria-pressed="true"]{background:var(--gold);border-color:var(--gold);color:#0B0E13}
+/*
+ * Undo / Redo / Delete beside the transport. All three are WRITE triggers on
+ * the module (`undo`, `redo`, `remove`), so they carry no state to show --
+ * only whether pressing them is meaningful, which is why Delete dims at a
+ * progression of one: the module's floor is one chord, since every add gesture
+ * copies the chord you are on, and a button that silently does nothing is
+ * worse than a button that says it cannot.
+ */
+/*
+ * THE ONLY REPORT A LONG ACTION MAKES. Read Clip and Stamp Clip hand work to a
+ * worker thread and answer immediately, so the button press told you nothing
+ * and a failure was indistinguishable from a success -- the module has always
+ * known (`status` is idle/working/ok/failed) and nothing ever asked. It rides
+ * in with `state` beside `prog`; a transition bumps the module's rev, so the
+ * Tool tab re-reads.
+ *
+ * Shown only while it has something to say: `working`, and the verdict for a
+ * few seconds after. `idle` is not news.
+ */
+.stat{margin-left:10px;padding:5px 9px;border-radius:8px;flex:0 0 auto;
+  font:700 9px/1 ui-monospace,monospace;letter-spacing:.14em;
+  background:var(--raised);border:1px solid var(--line);color:var(--dim)}
+.stat.working{color:var(--gold);border-color:#3A2E1C}
+.stat.ok{color:#4FD1E0;border-color:#1D3A40}
+.stat.failed{color:var(--warn);border-color:#4A2020}
+.acts{display:flex;gap:6px;margin-left:10px;align-items:center}
+/*
+ * THE PATTERN GRID: sixteen slots, two rows of eight, exactly as they sit
+ * under your hand on the device -- so the picture on the screen and the
+ * buttons on the Move are the same shape, and a slot you learned in one place
+ * is in the same place in the other.
+ */
+.pats{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin-top:2px}
+.pat{aspect-ratio:1;min-height:0;border-radius:7px;font:600 11px/1 ui-monospace,SF Mono,monospace;
+  background:var(--sunk);border:1px solid var(--line);color:var(--dim);
+  display:flex;align-items:center;justify-content:center;
+  transition:background .1s,color .1s,border-color .1s}
+.pat.full{background:#243042;border-color:#33506e;color:#9DC3E6}
+.pat.cur{background:var(--gold);border-color:var(--gold);color:#0B0E13}
+.pat:active{transform:scale(.94)}
+.patrow{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px}
+.pathint{font:500 10px/1.2 ui-monospace,SF Mono,monospace;color:var(--dim);letter-spacing:.04em}
+.patdel{padding:4px 10px;border-radius:7px;background:var(--raised);border:1px solid var(--line);
+  color:var(--dim);font:600 10px/1 ui-monospace,SF Mono,monospace;letter-spacing:.06em}
+.patdel.on{background:var(--warn);border-color:var(--warn);color:#0B0E13}
+.act{width:38px;height:38px;flex:0 0 auto;border-radius:10px;
+  background:var(--raised);border:1px solid var(--line);color:var(--dim);
+  display:flex;align-items:center;justify-content:center;
+  transition:background .12s,color .12s,border-color .12s}
+.acts svg,.xport svg{display:block;flex:0 0 auto}
+.act:active{background:var(--gold);border-color:var(--gold);color:#0B0E13}
+.act.warn:active{background:var(--warn);border-color:var(--warn);color:#0B0E13}
+.act[disabled]{opacity:.3}
+/*
+ * BYPASS, as a control you own rather than a thing to be talked through.
+ *
+ * Stacks reads an incoming note as a CHORD SELECTOR ("so it works the same
+ * from a Move pad, a clip and an external keyboard"), so once a recorded clip
+ * plays back on the track the slot listens to, the module re-triggers off its
+ * own recording. That is not a bug to fix in the module -- selecting chords
+ * from a clip is the feature -- it is a state you need to be able to leave.
+ *
+ * Lit when BYPASSED, because that is the abnormal state and the one worth
+ * seeing from across the room.
+ */
+.act[aria-pressed="true"]{background:var(--warn);border-color:var(--warn);color:#0B0E13}
+.chips{display:flex;gap:9px;margin-left:auto;align-items:center}
+.chip{padding:5px 10px;border-radius:8px;background:var(--raised);border:1px solid var(--line);
+  display:flex;flex-direction:column;gap:3px;min-width:56px}
+.chip b{font:700 14px/1 ui-monospace,"SF Mono",monospace;font-variant-numeric:tabular-nums}
+.chip span{font:600 7px/1 ui-monospace,monospace;letter-spacing:.16em;color:var(--faint)}
+.live{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:0 0 auto}
+.live.on{background:var(--cyan);box-shadow:0 0 11px var(--cyan);animation:pulse 1.7s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.demo{font:700 8px/1 ui-monospace,monospace;letter-spacing:.16em;color:#0B0E13;
+  background:var(--gold);padding:5px 8px;border-radius:5px}
+
+.roll{position:relative;flex:1 1 auto;min-height:240px;
+  background:radial-gradient(120% 80% at 50% 0%,#101722 0%,var(--ground) 62%)}
+.roll canvas{display:block;width:100%;height:100%;touch-action:none}
+.hint{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:9px;pointer-events:none;text-align:center;padding:24px}
+.hint h2{margin:0;font:800 21px/1.15 -apple-system,system-ui,sans-serif;letter-spacing:-.02em}
+.hint p{margin:0;color:var(--dim);max-width:34ch;font-size:13.5px}
+
+/* Same left/right inset as the roll's PAD, so bar 1 starts at the same x in
+   both. gap:0 with the spacing carried as each card's own margin, or a card
+   could not be proportional to its length and line up at the same time. */
+.strip{display:flex;gap:0;
+  padding:11px 14px calc(11px + var(--safe-b)) calc(14px + var(--gutter));
+  overflow-x:auto;
+  flex:0 0 auto;border-top:1px solid var(--line);background:var(--panel);
+  scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.strip::-webkit-scrollbar{display:none}
+/*
+ * A CARD IS AS WIDE AS ITS CHORD IS LONG, because the strip sits under the
+ * roll and is read against it. Sizing to the text instead made "Dm9" wider
+ * than "A" and put every card out of step with the bar it names -- the
+ * spacing said something about the chord's SPELLING rather than its length.
+ * flex-grow carries the length and flex-basis is 0, so the row divides the
+ * width in the same proportion the roll does.
+ */
+.card{flex:1 0 0;height:var(--tap);padding:8px 11px;border-radius:11px;
+  margin-right:6px;background:var(--raised);border:1.5px solid var(--line);
+  display:flex;flex-direction:column;justify-content:center;gap:3px;text-align:left;
+  min-width:0;overflow:hidden;
+  transition:transform .12s cubic-bezier(.2,.9,.3,1)}
+.card .nm,.card .ln{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/*
+ * The add button names no chord, so it sits OUTSIDE the aligned run -- and the
+ * roll has to know how much room it takes, or every card is shifted left of
+ * its bar by a fraction of it. STRIP_ADD_W below is the same 46, and the two
+ * must move together: the roll insets its right edge by 14 (the strip's own
+ * padding) + 46, so the eight cards and the eight bars divide the identical
+ * width. No margin-right, for the same reason.
+ */
+.card.add{flex:0 0 46px;min-width:46px;margin-right:0}
+.card:active{transform:scale(.955)}
+.card .nm{font:700 16px/1 -apple-system,system-ui,sans-serif;letter-spacing:-.01em}
+.card .ln{font:600 8px/1 ui-monospace,monospace;letter-spacing:.12em;color:var(--faint)}
+.card.sel{border-color:var(--violet);background:#20203A}
+.card.sel .ln{color:var(--violet)}
+.card.playing{border-color:var(--cyan);box-shadow:0 0 0 1px var(--cyan),0 0 24px -6px var(--cyan)}
+/* Muted recedes. No red, no strikethrough: it is absence, not an error. */
+.card.muted{background:#12161D;border-style:dashed}
+.card.muted .nm{color:var(--faint)}
+.card.rest .nm{color:var(--faint)}
+.card.add{min-width:var(--tap);align-items:center;justify-content:center;
+  color:var(--faint);border-style:dashed;font-size:23px;font-weight:300}
+
+/* ── right: the rail ─────────────────────────────────────────── */
+.rail{display:flex;flex-direction:column;background:var(--panel);min-width:0;min-height:0}
+.railhead{padding:9px 12px 0}
+.scope{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border-radius:6px;
+  font:700 8px/1 ui-monospace,monospace;letter-spacing:.16em}
+.scope.chord{background:#211F36;color:var(--violet)}
+.scope.prog{background:#1A2028;color:var(--dim)}
+.tabs{display:flex;gap:2px;padding:7px 11px 0;flex:0 0 auto}
+.tab{flex:1;height:27px;color:var(--dim);font:700 9px/1 ui-monospace,monospace;
+  letter-spacing:.06em;border-bottom:2.5px solid transparent;transition:color .12s}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--gold)}
+/* TWO COLUMNS, DENSELY PACKED. A rail of full-width cards spends most of its
+   height on labels and padding for controls that need a third of the width --
+   an octave, an inversion. Narrow controls take one column, wide ones span
+   both, and `dense` back-fills the hole a span-2 card would otherwise leave
+   above it. Seven rows instead of nine on the CHORD bank. */
+/* SIX columns, so a row can hold two controls or three. Cards declare their
+   width in sixths (see SPAN): a full-width control spans 6, a pair spans 3,
+   a trio spans 2. Two columns could only ever pair. */
+/*
+ * grid-auto-rows:min-content is LOAD-BEARING.
+ *
+ * With `auto` rows the tracks were sized against the pane's own height once
+ * the content outgrew it, so a row came out SHORTER than the card in it --
+ * and that one fault produced both bugs seen here, depending only on
+ * align-self. Stretched, the card was squeezed and `overflow:hidden` ate the
+ * bottom of the shape list (a list you could see past and not scroll to).
+ * Started, the card keeps its height and SPILLS into the row below, drawing
+ * over Inversion / Length / Offset.
+ *
+ * min-content tracks are sized by their contents and never by the leftover
+ * space, so a row always holds its card and the pane takes the overflow.
+ */
+.pane{padding:6px 8px calc(6px + var(--safe-b));overflow-y:auto;flex:1;min-height:0;
+  display:grid;grid-template-columns:repeat(6,1fr);grid-auto-rows:min-content;
+  align-content:start;gap:4px;-webkit-overflow-scrolling:touch}
+/* min-width:0 on the flex/grid child, or long values push the card wider
+   than the rail and the pane scrolls sideways. */
+/* flex-shrink:0 is LOAD-BEARING. .pane is a flex column, so a card defaults
+   to flex-shrink:1 and the rail SQUEEZES its cards to fit rather than
+   scrolling -- and because .ctl clips, the squeeze is silent: DEGREE lost its
+   VI/VII/rest row mid-glyph, Chord Shape lost two rows, and every bank looked
+   subtly wrong with no scrollbar to explain why. Cards keep their natural
+   height; the pane's overflow-y:auto is what absorbs the excess. */
+/* align-self:start, or the grid stretches/squeezes a card away from its own
+   content height and `overflow:hidden` quietly eats the difference. */
+.ctl{background:var(--raised);border:1px solid var(--line);border-radius:10px;
+  padding:4px 6px;min-width:0;grid-column:span 6;align-self:start;overflow:hidden}
+.ctl.half{grid-column:span 3}
+.ctl.third{grid-column:span 2}
+.ctl > label{display:flex;justify-content:space-between;align-items:baseline;
+  gap:8px;margin-bottom:2px;min-width:0}
+.ctl > label .v{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ctl > label .k{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.k{font:700 8px/1 ui-monospace,monospace;letter-spacing:.18em;color:var(--faint)}
+.v{font:700 12px/1 -apple-system,system-ui,sans-serif;color:var(--gold)}
+
+/* generic: only where the parameter has no shape worth drawing */
+.seg{display:flex;flex-wrap:wrap;gap:4px}
+.seg button{flex:1 1 auto;min-width:28px;min-height:25px;padding:0 5px;border-radius:6px;
+  border:1px solid var(--line);background:#0F151E;color:var(--dim);
+  font:600 11px/1 -apple-system,system-ui,sans-serif;transition:background .1s,color .1s}
+.seg button[aria-pressed="true"]{background:var(--gold);border-color:var(--gold);
+  color:#0B0E13;font-weight:700}
+.seg button:active{transform:scale(.94)}
+.seg button.off{opacity:.28;pointer-events:none}
+/*
+ * A LONG LIST SCROLLS INSIDE ITS OWN CELL, so every cell on the bank stays in
+ * view and only the one with more content moves.
+ *
+ * This was removed once, and that was a fix aimed at the wrong thing. The
+ * rubber-band came from `grid-auto-rows: auto` sizing a row SHORTER than the
+ * card in it: `.ctl{overflow:hidden}` then clipped the scroller, which itself
+ * had nothing to scroll because its own content fitted its own cap. So the
+ * list was visible past the edge and unreachable, and the drag moved the
+ * pane's overscroll. With min-content rows the card always holds its scroller,
+ * and the scroller does its job.
+ *
+ * The cap is what buys the behaviour: without it the cell grows to its content
+ * and pushes the rest of the bank off the screen, which is what makes you
+ * scroll the whole pane to reach a control you could otherwise see.
+ */
+.pick{max-height:150px;overflow-y:auto;border-radius:8px;background:#0C1119;
+  padding:5px;border:1px solid #1B222C;-webkit-overflow-scrolling:touch;
+  overscroll-behavior:contain}
+.slide{position:relative;height:24px;border-radius:8px;background:#0F151E;
+  border:1px solid var(--line);overflow:hidden;touch-action:none}
+.slide i{position:absolute;top:0;bottom:0;left:0;background:linear-gradient(90deg,#3A2E1C,var(--gold));opacity:.9}
+.slide u{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font:700 12px/1 ui-monospace,monospace;text-decoration:none;text-shadow:0 1px 3px #000;z-index:2}
+.slide.bi::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;
+  background:var(--faint);opacity:.7;z-index:1}
+/* The action button IS a card, so it takes the card's frame and its own
+   padding rather than sitting inside one. */
+.act-btn{min-height:32px;display:flex;align-items:center;justify-content:center;
+  color:var(--ink);font:700 11px/1 ui-monospace,monospace;letter-spacing:.12em;
+  text-align:center}
+.act-btn:active{background:var(--gold);border-color:var(--gold);color:#0B0E13}
+.act-btn.warn:active{background:var(--warn);border-color:var(--warn);color:#0B0E13}
+.fire{width:100%;min-height:28px;border-radius:9px;border:1px solid var(--line);
+  background:#0F151E;font:700 11px/1 ui-monospace,monospace;letter-spacing:.12em;margin-top:6px}
+.fire:first-of-type{margin-top:0}
+.fire:active{background:var(--gold);color:#0B0E13}
+.fire.warn:active{background:var(--warn);color:#0B0E13}
+
+/* ── bespoke controls ────────────────────────────────────────── */
+/* RHYTHM: the figure, as the hits it plays */
+/* Same rule as .pick: capped, scrolls in place, so the cells below stay put.
+   overscroll-behavior:contain stops a flick that reaches the end from being
+   handed to the pane, which is what makes two nested scrollers feel like a
+   fight over one gesture. */
+.rlist{display:flex;flex-direction:column;gap:2px;max-height:138px;overflow-y:auto;
+  -webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.rrow{display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:6px;
+  background:#0F151E;border:1px solid transparent;min-height:23px}
+/* The LABEL may shrink and ellipsis; the PATTERN may not -- it is the
+   thing you are reading. min-width:0 lets the flex child actually shrink
+   (it defaults to auto, which is what makes flex rows overflow). */
+.rrow > span{flex:1 1 44px;min-width:0;font:600 10px/1 ui-monospace,monospace;
+  color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rrow svg{flex:0 0 96px;min-width:96px;height:11px}
+.rrow rect{fill:#4B5765}
+.rrow[aria-pressed="true"]{background:#241C0E;border-color:var(--gold)}
+.rrow[aria-pressed="true"] > span{color:var(--gold)}
+.rrow[aria-pressed="true"] rect{fill:var(--gold)}
+/* ROOT: a keyboard */
+.kbd{position:relative;height:clamp(36px,6.5vw,46px);display:flex;gap:2px}
+.wk{flex:1;background:#E8EDF2;border-radius:0 0 5px 5px;position:relative}
+.wk::after{content:attr(data-n);position:absolute;bottom:5px;left:0;right:0;text-align:center;
+  font:700 9px/1 ui-monospace,monospace;color:#5A6675}
+.wk[aria-pressed="true"]{background:var(--gold)}
+.wk[aria-pressed="true"]::after{color:#0B0E13}
+.wk.dimmed{background:#8C97A3}
+.bk{position:absolute;top:0;width:8.2%;height:60%;background:#141922;
+  border:1px solid #000;border-radius:0 0 4px 4px;z-index:2}
+.bk[aria-pressed="true"]{background:var(--gold);border-color:var(--gold)}
+.octrow{display:flex;align-items:center;gap:3px;margin-top:3px}
+.octrow button{flex:1;min-height:27px;border-radius:7px;border:1px solid var(--line);
+  background:#0F151E;color:var(--dim);font:700 11px/1 ui-monospace,monospace}
+.octrow button[aria-pressed="true"]{background:var(--gold);border-color:var(--gold);color:#0B0E13}
+/* DEGREE: the numeral and the chord it is */
+/* SCALABLE, NOT FIXED-COLUMN. A hard `repeat(4,1fr)` squashes below a
+   legible size on a narrow rail and overflows on a wide one; auto-fit
+   reflows the row count instead and every button keeps its floor. */
+/* minmax(36px), not repeat(8,1fr): eight numerals fit one row on this rail,
+   and auto-fit still reflows rather than squashing on a narrower one -- which
+   is the reason this was never a fixed column count. */
+.deg{display:grid;grid-template-columns:repeat(auto-fit,minmax(27px,1fr));gap:2px}
+.deg button{padding:2px 0;border-radius:6px;border:1px solid var(--line);background:#0F151E;
+  display:flex;flex-direction:column;align-items:center;gap:0;min-height:34px;
+  min-width:0;overflow:hidden}
+.deg b{font:700 13px/1.1 -apple-system,system-ui,sans-serif}
+.deg span{font:600 8px/1 ui-monospace,monospace;color:var(--faint);
+  max-width:100%;overflow:hidden;text-overflow:clip;white-space:nowrap}
+.deg button[aria-pressed="true"]{background:var(--gold);border-color:var(--gold)}
+.deg button[aria-pressed="true"] b,.deg button[aria-pressed="true"] span{color:#0B0E13}
+.deg button.off{opacity:.28;pointer-events:none}
+/* COLOUR: the spacing itself */
+.vgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(62px,1fr));gap:5px}
+.vgrid button{padding:3px 2px 2px;border-radius:8px;border:1px solid var(--line);
+  background:#0F151E;display:flex;flex-direction:column;align-items:center;gap:4px}
+.vgrid svg{width:21px;height:24px}
+.vgrid circle{fill:var(--gold)}
+.vgrid circle.gone{fill:none;stroke:var(--faint);stroke-width:1.2}
+.vgrid span{font:600 8px/1 ui-monospace,monospace;color:var(--dim)}
+.vgrid button[aria-pressed="true"]{border-color:var(--gold);background:#241C0E}
+.vgrid button[aria-pressed="true"] span{color:var(--gold)}
+/* LENGTH: a width */
+.dur{display:grid;grid-template-columns:repeat(auto-fit,minmax(38px,1fr));gap:4px}
+.dur button{position:relative;height:30px;border-radius:8px;border:1px solid var(--line);
+  background:#0F151E;overflow:hidden}
+.dur i{position:absolute;left:0;top:0;bottom:0;background:#2A3341}
+.dur span{position:relative;font:700 11px/30px ui-monospace,monospace;color:var(--dim)}
+.dur button[aria-pressed="true"]{border-color:var(--gold)}
+.dur button[aria-pressed="true"] i{background:var(--gold);opacity:.85}
+.dur button[aria-pressed="true"] span{color:#0B0E13}
+/* TIMING: swing, gate */
+/* STEPPER: a number you can land on. A 7-position inversion or a 5-position
+   octave read as a drag target only because everything numeric defaulted to
+   one; the value you want is a specific integer, so name it and step to it. */
+/* CENTRED AND CAPPED. In a full-width card a stretched stepper puts - and +
+   at opposite ends of the rail with the number marooned between them, which
+   reads as two unrelated controls. The row keeps its natural size and sits in
+   the middle whatever the card's width. */
+.step{display:flex;align-items:center;justify-content:center;gap:5px;
+  max-width:190px;margin:0 auto}
+.step button{flex:0 0 32px;height:32px;border-radius:8px;border:1px solid var(--line);
+  background:#0F151E;color:var(--ink);font:700 17px/1 -apple-system,system-ui,sans-serif}
+/*
+ * A THIRD-WIDTH CARD CANNOT AFFORD TWO 36px BUTTONS. Inversion, Length and
+ * Offset share one row, so each card is ~98px inside its padding: 36+36 and
+ * the gaps left about 16px for the value, which clipped it to a sliver -- the
+ * control showed its two buttons and not the number they change. The buttons
+ * give the width back here; they stay comfortably tappable and the value gets
+ * roughly twice the room.
+ */
+.ctl.third .step{gap:3px}
+.ctl.third .step button{flex:0 0 25px;height:29px;font-size:14px}
+.step button:active{background:var(--gold);color:#0B0E13}
+.step button[disabled]{opacity:.3}
+.step span{flex:1;min-width:0;text-align:center;color:var(--gold);
+  font:700 13px/1 ui-monospace,monospace;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tim{width:100%;height:30px;display:block;touch-action:none;border-radius:8px;
+  background:#0F151E;border:1px solid var(--line)}
+</style>
+</head>
+<body>
+
+<div class="left">
+  <header class="top">
+    <div class="brand">Stacks<small>CHORD PROGRESSIONS</small></div>
+    <button id="xport" class="xport" aria-label="Play the progression"
+            aria-pressed="false"></button>
+    <div class="acts">
+      <button id="actUndo" class="act" aria-label="Undo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M4 10h10a5 5 0 0 1 0 10h-3"/><polyline points="8 6 4 10 8 14"/>
+      </svg></button>
+      <button id="actRedo" class="act" aria-label="Redo"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M20 10H10a5 5 0 0 0 0 10h3"/><polyline points="16 6 20 10 16 14"/>
+      </svg></button>
+      <!--
+        MINUS, NOT A TRASHCAN. A bin means "destroy this object, permanently";
+        this takes one slot out of a sequence and undo puts it back. The strip
+        already carries the other half of the pair -- its "+" is how a chord is
+        added -- so the counterpart reads without a legend.
+      -->
+      <button id="actBypass" class="act" aria-pressed="false"
+              aria-label="Bypass Stacks"><svg viewBox="0 0 24 24" width="17" height="17"
+        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+        stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 4v8"/><path d="M6.8 7.2a8 8 0 1 0 10.4 0"/>
+      </svg></button>
+      <span id="stat" class="stat" role="status" aria-live="polite" hidden></span>
+      <button id="actDel" class="act warn" aria-label="Remove the selected chord"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 12h12"/>
+      </svg></button>
+    </div>
+    <div class="chips">
+      <span id="demoBadge" class="demo" hidden>DEMO</span>
+      <div class="chip"><b id="sKey">A min</b><span>KEY</span></div>
+      <div class="chip"><b id="sBars">4</b><span>BARS</span></div>
+      <div class="chip"><b id="sBpm">120</b><span>BPM</span></div>
+      <span id="sLive" class="live"></span>
+    </div>
+  </header>
+  <section class="roll">
+    <canvas id="roll"></canvas>
+    <div class="hint" id="hint" hidden>
+      <h2>Four empty bars</h2>
+      <p>Tap a slot below, then pick a degree — or load a progression from Start.</p>
+    </div>
+  </section>
+  <nav class="strip" id="strip" aria-label="Chords"></nav>
+</div>
+
+<aside class="rail">
+  <div class="railhead"><span id="scope" class="scope prog">● WHOLE PROGRESSION</span></div>
+  <div class="tabs" role="tablist" id="tabs"></div>
+  <div class="pane" id="pane"></div>
+</aside>
+
+<script src="/static/schwung-remote-api.js" onerror="window.__noBridge=1"></script>
+<script>
+"use strict";
+(function () {
+
+/* ═══════════════════════ embedded height ══════════════════════ */
+/*
+ * EMBEDDED, WE NAME OUR OWN HEIGHT.  Full-page (popped out, or an iPad) this
+ * panel fills the viewport and `height:100%` is exactly right.  As a component
+ * on the manager's page it is the opposite: the host starts the iframe at 60vh
+ * of ITS window -- 1871px on a desktop -- `height:100%` stretches to fill that,
+ * and the score becomes ~1700px of empty ground above a rail of controls.  The
+ * host then sizes the frame from the height we report, so it keeps whatever
+ * arbitrary number it began with.
+ *
+ * Derived from WIDTH ONLY, for the same reason the layout breakpoint is: the
+ * parent's layout sets our width and cannot be fed back, while height is the
+ * axis we ourselves drive.  Reading clientHeight here would rebuild the loop
+ * this exists to cut.
+ */
+if (window.self !== window.top) {
+  var fitEmbedded = function () {
+    var w = document.documentElement.clientWidth || 1024;
+    var h = Math.round(Math.min(880, Math.max(560, w * 0.60)));
+    document.documentElement.style.height = h + "px";
+    document.body.style.height = h + "px";
+  };
+  fitEmbedded();
+  window.addEventListener("resize", fitEmbedded);
+}
+
+/* ═══════════════════ shape families ══════════════════════════ */
+/*
+ * Chord Shape shows only the shapes in the selected family.
+ *
+ * 38 buttons is a list you scroll; a family is 3-11, which is a row or two you
+ * read at a glance -- and Shape Family sits directly above it, so the pair
+ * already reads as filter-then-pick.
+ *
+ * The run boundaries are NOT written here. They belong to SHAPES[] in
+ * dsp/stacks.c, and a second copy in this file is precisely what produced the
+ * phantom-note bug in this panel. tools/gen_ui_runs.py generates
+ * them into module.json, which the manager already serves beside this page, so
+ * a relative fetch gets the same table the DSP compiles from.
+ *
+ * If the fetch fails the picker falls back to ALL shapes -- degraded, never
+ * wrong: a missing filter shows too much, a guessed one shows the wrong notes.
+ */
+var FAMILY_RUNS = null, GENRE_RUNS = null;
+fetch("module.json").then(function(r){ return r.ok ? r.json() : null; })
+  .then(function(m){
+    var caps = (m && m.capabilities) || {};
+    var got = false;
+    if (caps.shape_families && caps.shape_families.length){
+      FAMILY_RUNS = caps.shape_families; got = true;
+    }
+    if (caps.genre_progressions && caps.genre_progressions.length){
+      GENRE_RUNS = caps.genre_progressions; got = true;
+    }
+    /* The declaration itself, for the Tool tab: names, ranges and option
+       lists for every control. On a chain slot getChainParams() answers the
+       same thing and wins if it already has. */
+    if (caps.chain_params && !Object.keys(META).length){
+      caps.chain_params.forEach(function(m){ if (m && m.key) META[m.key] = m; });
+      got = true;
+    }
+    if (got){ paneSig = null; render(); }
+  })
+  .catch(function(){ /* keep both null: show every shape and every preset */ });
+
+/*
+ * The presets a genre owns, or null for "show everything".
+ *
+ * EXCLUSIVE, unlike Shape Family. Genres are not degrees of the same thing --
+ * Rock does not contain Pop the way a 7th contains a triad -- so a cumulative
+ * list would be arbitrary in its order and would put 142 presets under
+ * Cinematic. `none` is the genre of the "none" preset and means no filter.
+ */
+function presetsInGenre(opts){
+  if (!GENRE_RUNS) return null;
+  var g = String(get("genre") || "");
+  if (!g || g === "none") return null;
+  for (var i = 0; i < GENRE_RUNS.length; i++){
+    var r = GENRE_RUNS[i];
+    if (r.name !== g) continue;
+    var end = r.first + r.count;
+    if (r.first < 0 || end > opts.length) return null;
+    return opts.slice(r.first, end);
+  }
+  return null;
+}
+
+/*
+ * HOW DEEP THE LIST GOES IS THE USER'S CHOICE, AND IT ONLY EVER RISES ON ITS
+ * OWN.
+ *
+ * `family` is a property of the CHORD -- pick `maj` and the module reports
+ * triad. With a cumulative list that made the picker collapse under your
+ * finger: browse at `ext`, choose a triad, and the 38 shapes you were reading
+ * became 10. So the panel keeps its own browse depth. Tapping a family sets it
+ * (down as well as up -- that is an explicit request); selecting a chord whose
+ * shape lies beyond it RAISES it, because the alternative is a pressed shape
+ * that is not in the list; nothing else lowers it.
+ */
+var browseFam = null;
+function famIndexOf(name){
+  if (!FAMILY_RUNS) return -1;
+  for (var i = 0; i < FAMILY_RUNS.length; i++)
+    if (FAMILY_RUNS[i].name === name) return i;
+  return -1;
+}
+function browseFamIndex(){
+  var chord = famIndexOf(String(get("family") || ""));
+  if (browseFam === null) return chord;
+  return chord > browseFam ? chord : browseFam;
+}
+
+/*
+ * The shapes a family reaches, or null for "show everything".
+ *
+ * CUMULATIVE, not exclusive: a family shows its own shapes AND every simpler
+ * family's, so the list only ever grows as you move up -- 4, 10, 13, 24, 32,
+ * 38. The families do not partition into increasing sizes on their own (6th
+ * holds three shapes against triad's six), so an exclusive filter makes the
+ * list jump around as you step through, and puts a triad out of reach from
+ * `ext` without first stepping back down. Building a 7th on a triad is how the
+ * table is ordered, so including what came before is what the ordering means.
+ */
+function shapesInFamily(opts){
+  if (!FAMILY_RUNS) return null;
+  var i = browseFamIndex();
+  if (i < 0) return null;
+  var r = FAMILY_RUNS[i], end = r.first + r.count;
+  if (r.first < 0 || end > opts.length) return null;
+  return opts.slice(0, end);
+}
+
+/* ═══════════════════════════════ bridge ═══════════════════════ */
+var R = window.schwungRemote || null;
+/*
+ * THE TOOL TAB. As an overtake tool this panel is framed with component
+ * "tool" and the module's params live under the manager's "overtake_dsp:"
+ * prefix -- reads come from `state` (a flat map the DSP publishes), writes go
+ * to that prefix, and the transport arrives as `rui_play` pushes rather than
+ * as anything a chain component ever published. Framed by a chain slot it is
+ * the component it always was.
+ */
+var TOOL = !!(R && R.component === "tool");
+var COMP = TOOL ? "overtake_dsp" : ((R && R.component) || "midi_fx1");
+var DEMO = !R;
+var vals = {}, META = {};
+
+function set(k, v){ vals[k] = String(v); if (R) R.setParam(COMP + ":" + k, String(v)); render(); }
+function get(k){ return vals[k]; }
+function esc(s){ return String(s).replace(/[<>&"]/g, function(c){
+  return ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"})[c]; }); }
+
+var DEMO_PROG = "v12|4|4|2|8|ab5|9|64|1|4|96|38|0|" + [
+  "Am,A3,0,16,0,100,0,1,57.60.64", "F,F3,0,16,0,100,0,1,53.57.60",
+  "C,C3,0,16,0,100,0,1,48.52.55",  "G7,G3,0,8,0,100,0,1,55.59.62.65",
+  "Dm,D3,0,8,0,100,1,1,50.53.57"
+].join(";");
+
+/* ═══════════════════════════════ prog ═════════════════════════ */
+function parseProg(s){
+  if (typeof s !== "string" || !s) return null;
+  var h = s.split("|");
+  if (h.length < 14 || (h[0] !== "v13" && h[0] !== "v12")) return null;
+  var p = { sel:+h[2]||1, playing:+h[3], stepUnits:+h[4]||8, mask:parseInt(h[5],16)||0,
+            key:+h[6]||0, clipUnits:+h[7]||32, running:h[8]==="1", stepBeats:+h[9]||4,
+            bpm:+h[10]||120, posUnits:+h[11]||0, grouping:+h[12]||0, chords:[] };
+  h.slice(13).join("|").split(";").forEach(function(part){
+    if (!part) return;
+    var f = part.split(","); if (f.length < 9) return;
+    /*
+     * AN EMPTY NOTE LIST IS NOT A NOTE, and it parsed as one.
+     * "".split(".") is [""], and Number("") is 0 -- not NaN -- so the 0..127
+     * filter PASSED it and every rest arrived carrying a single note at MIDI
+     * pitch 0. Two visible symptoms from that one coercion: `rest` came out
+     * false, so a rest was captioned with its name ("REST") instead of the
+     * rest glyph; and a phantom note was drawn at the very bottom of the
+     * staff, which drifted as soon as a real chord widened the pitch window.
+     * Guard the empty string, and reject NaN explicitly rather than leaning
+     * on a range test to do it.
+     */
+    /* v13 writes "note:velocity", v12 wrote "note"; both are accepted, because
+       a DSP that has not been reloaded still emits v12. An absent velocity
+       falls back to the chord's, which is what v12 meant. */
+    var rawNotes = f[8] || "", notes = [], noteVel = [];
+    if (rawNotes !== "") rawNotes.split(".").forEach(function(t){
+      if (!t) return;
+      var bits = t.split(":"), nn = parseInt(bits[0], 10);
+      if (!isFinite(nn) || nn < 0 || nn > 127) return;
+      var vv = bits.length > 1 ? parseInt(bits[1], 10) : NaN;
+      notes.push(nn);
+      noteVel.push(isFinite(vv) && vv >= 1 && vv <= 127 ? vv : null);
+    });
+    p.chords.push({ name:f[0]||"", root:f[1]||"", inv:+f[2]||0, len:+f[3]||1, off:+f[4]||0,
+                    vel:+f[5]||100, mute:f[6]==="1", mask:parseInt(f[7],16)||1,
+                    rest:notes.length===0, notes:notes, noteVel:noteVel });
+  });
+  p.count = p.chords.length;
+  return p;
+}
+var NOTE = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+function inScale(p, midi){ return !!(p.mask & (1 << ((((midi - p.key) % 12) + 12) % 12))); }
+
+/* ═══════════════════════════════ the roll ═════════════════════ */
+var cv = document.getElementById("roll"), cx = cv.getContext("2d"), hits = [];
+
+/*
+ * THE RHYTHM IS DRAWN AS THE HITS IT PLAYS -- the same rule the Move's own
+ * staff follows (canvas.js), and ported rather than reinvented so the two
+ * surfaces cannot disagree about what a bossa looks like. The mask covers ONE
+ * BAR, anchored to it, and TILES across the chord, exactly as the scheduler does; a single
+ * solid block made every pattern look like every other one and the only way
+ * to know which was set was to remember choosing it.
+ *
+ * "hold" (mask 1) is one hit for the whole chord and must NOT tile -- tiling
+ * it draws a two-bar chord as two one-bar blocks.
+ */
+/* `phaseU` is where in the bar the chord starts: the figure is anchored to
+   the BAR, as the scheduler anchors it, so a chord on beat three shows the
+   second half of its clave. A chord that reaches no hit draws none. */
+function hitSegs(c, w, upb, phaseU){
+  var mask = c.mask || 1, len = Math.max(1, c.len), step = Math.max(1, upb || 8);
+  var ph = (mask === 1) ? 0 : ((phaseU || 0) % step);
+  var xs = [], tiles = (mask === 1) ? 1 : Math.ceil((len + ph) / step);
+  for (var t = 0; t < tiles; t++){
+    for (var b = 0; b < 16; b++){
+      if (!(mask & (1 << b))) continue;
+      var u = t * step + (b / 16) * step - ph;
+      if (u < 0) continue;
+      if (u >= len) break;
+      xs.push((u / len) * w);
+    }
+  }
+  var segs = [];
+  for (var i = 0; i < xs.length; i++){
+    var sx = xs[i], end = (i + 1 < xs.length) ? xs[i + 1] - 1 : w;
+    if (end - sx > 0.5) segs.push({ x: sx, w: end - sx });
+  }
+  return segs;
+}
+function drawRoll(p, now){
+  var r = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+  if (!r.width || !r.height) return;
+  cv.width = r.width * d; cv.height = r.height * d; cx.setTransform(d,0,0,d,0,0);
+  var W = r.width, H = r.height;
+  cx.clearRect(0,0,W,H); hits = [];
+  if (!p || !p.count) return;
+
+  /*
+   * THE ROLL TAKES ITS HORIZONTAL EXTENT FROM THE STRIP, BY MEASUREMENT.
+   *
+   * The two rows must divide the identical width or every card sits a fraction
+   * of a bar off the block it names, and the error accumulates left to right.
+   * Restating the strip's padding and its add button's width as constants here
+   * worked until either changed -- and they are set in CSS, in another part of
+   * this file, with a safe-area inset in the mix. So ask the DOM: the run
+   * starts at the strip's content box and ends where the add button begins.
+   * Nothing to keep in sync, and it follows a re-layout for free.
+   */
+  var TOP = 10, BOT = H - 18, PAD = 14, PAD_R = 14, GUTTER = 0;
+  var stripEl = document.getElementById("strip");
+  if (stripEl){
+    var sr = stripEl.getBoundingClientRect(), cr = cv.getBoundingClientRect();
+    var cs = getComputedStyle(stripEl);
+    var addEl = stripEl.querySelector(".card.add");
+    var padL = parseFloat(cs.paddingLeft || 0), padR = parseFloat(cs.paddingRight || 0);
+    GUTTER = Math.max(0, padL - padR);   /* the extra left inset IS the gutter */
+    var runL = sr.left + padL - cr.left;
+    var runR = (addEl ? addEl.getBoundingClientRect().left
+                      : sr.right - parseFloat(cs.paddingRight || 0)) - cr.left;
+    if (isFinite(runL) && isFinite(runR) && runR - runL > 40){
+      PAD = runL; PAD_R = W - runR;
+    }
+  }
+  var lo = 127, hi = 0, any = false;
+  p.chords.forEach(function(c){ c.notes.forEach(function(n){
+    if (n<lo) lo=n; if (n>hi) hi=n; any = true; }); });
+  if (!any){ lo = 55; hi = 79; }
+  lo -= 3; hi += 3;
+  var span = Math.max(12, hi - lo);
+  var yOf = function(n){ return BOT - ((n-lo)/span) * (BOT-TOP); };
+  var xOf = function(u){ return PAD + (u/Math.max(1,p.clipUnits)) * (W - PAD - PAD_R); };
+
+  /*
+   * THE KEYBOARD, in the inset the strip's padding already reserves. Drawn
+   * before the lanes so a lane line stops at its edge rather than running
+   * across the keys.
+   *
+   * What it lights is the chord you are LOOKING at, or the one sounding if the
+   * transport is running -- and in that chord's own colour, so the keyboard and
+   * the notes beside it never disagree.
+   */
+  if (GUTTER > 8 && PAD - GUTTER >= 0){
+    var laneH = (BOT - TOP) / span;
+    /*
+     * THE KEYS LIGHT WITH THE MUSIC, not with the publish.
+     *
+     * `playing` is the module's step and only reaches us when prog is
+     * re-fetched, which is far slower than a bar -- keys lit from it would
+     * stutter a beat behind. The playhead is already animated locally from
+     * (bpm, posUnits) for the same reason, so the chord under it is the one
+     * to light. Stopped, it lights the chord you are LOOKING at instead, so
+     * the keyboard always says something true about the current chord.
+     */
+    var head = playhead(p, now), litIdx = -1;
+    if (head !== null){
+      var at = 0;
+      for (var ci = 0; ci < p.count; ci++){
+        var cl = Math.max(1, p.chords[ci].len);
+        if (head >= at && head < at + cl){ litIdx = ci; break; }
+        at += cl;
+      }
+    }
+    var live = litIdx >= 0;
+    if (!live) litIdx = selIndex(p) - 1;
+    var litChord = p.chords[litIdx], lit = {};
+    if (litChord && !litChord.rest)
+      litChord.notes.forEach(function(nn){ lit[nn] = 1; });
+    /*
+     * A LIT KEY IS THE SAME COLOUR AS THE NOTE IT NAMES -- gold for a chord
+     * tone, cyan while it sounds, exactly as drawRoll paints those same notes
+     * a few pixels to the right.
+     *
+     * It was violet for a moment, matching the selection OUTLINE, and that was
+     * wrong for a reason worth keeping: violet is already spoken for by the
+     * tonic, both as the tinted key and as the tonic lane. Two meanings on one
+     * colour and the keyboard stops answering "which notes" and starts needing
+     * a legend.
+     */
+    drawKeys(cx, PAD - GUTTER, PAD, lo, hi, yOf, laneH, p.key, lit,
+             live ? "#4FD1E0" : "#F2A33C");
+  }
+
+  /* lanes: the SCALE, not the chromatic — the other eight are notes the
+     module snaps away from, so drawing them would be drawing nothing. */
+  for (var n = lo; n <= hi; n++){
+    if (!inScale(p, n)) continue;
+    var y = yOf(n), tonic = ((n - p.key) % 12 + 12) % 12 === 0;
+    cx.strokeStyle = tonic ? "rgba(139,123,232,.30)" : "rgba(36,45,57,.9)";
+    cx.lineWidth = tonic ? 1.4 : 1;
+    cx.beginPath(); cx.moveTo(PAD, y+.5); cx.lineTo(W-PAD_R, y+.5); cx.stroke();
+  }
+  var upb = p.stepUnits || 8, bars = Math.max(1, Math.round(p.clipUnits/upb));
+  cx.font = "600 9px ui-monospace,SF Mono,monospace";
+  for (var b = 0; b <= bars; b++){
+    var bx = xOf(b*upb);
+    cx.strokeStyle = b % 4 === 0 ? "rgba(75,87,101,.5)" : "rgba(36,45,57,.8)";
+    cx.beginPath(); cx.moveTo(bx+.5, TOP-8); cx.lineTo(bx+.5, BOT+6); cx.stroke();
+    if (b < bars){ cx.fillStyle = "#3F4A58"; cx.fillText(String(b+1), bx+5, BOT+14); }
+  }
+
+  var at = 0;
+  p.chords.forEach(function(c, i){
+    var x0 = xOf(at + c.off), x1 = xOf(at + c.off + Math.max(1,c.len));
+    /* PLAYING only means anything while the transport RUNS. `playing` carries
+       cur_step, which is 0 when stopped, so chord 1 wore the play tint
+       permanently on an idle device. */
+    var w = Math.max(6, x1 - x0), sel = (i === selIndex(p)-1),
+        play = p.running && (i === p.playing);
+    hits.push({ i:i, x:x0, w:w });
+
+    if (c.rest){
+      cx.save(); cx.setLineDash([3,4]); cx.strokeStyle = "rgba(90,102,117,.65)";
+      cx.strokeRect(x0+.5, TOP+.5, w-1, BOT-TOP-1); cx.restore();
+    } else if (c.mute){
+      /* MUTED: the shape stays, the fill goes. Same language the Move's own
+         staff uses, so both surfaces describe muting identically. */
+      cx.strokeStyle = "#5A6675"; cx.lineWidth = 1.4;
+      var msegs = hitSegs(c, w, p.stepUnits, at + c.off);
+      c.notes.forEach(function(nn){
+        var y = yOf(nn);
+        msegs.forEach(function(sg){
+          cx.strokeRect(x0 + sg.x + 1, y - 4, Math.max(1, sg.w - 2), 8);
+        });
+      });
+    } else {
+      var tint = play ? "79,209,224" : "242,163,60";
+      var g = cx.createLinearGradient(0, TOP, 0, BOT);
+      g.addColorStop(0, "rgba("+tint+",.13)"); g.addColorStop(1, "rgba("+tint+",.02)");
+      cx.fillStyle = g; cx.fillRect(x0, TOP, w, BOT-TOP);
+      var segs = hitSegs(c, w, p.stepUnits, at + c.off);
+      c.notes.forEach(function(nn, ni){
+        /* Per-note velocity is what makes humanise visible: with one figure per
+           chord every notehead was the same height and Randomize moved nothing
+           on screen. Falls back to the chord's on a v12 publish. */
+        var nv = (c.noteVel && c.noteVel[ni] != null) ? c.noteVel[ni] : c.vel;
+        var y = yOf(nn), hgt = 5 + (nv/127)*5;
+        cx.fillStyle = play ? "#4FD1E0" : "#F2A33C";
+        segs.forEach(function(sg){
+          var sw = Math.max(1.5, sg.w - 1.5);
+          cx.beginPath();
+          if (cx.roundRect) cx.roundRect(x0 + sg.x + 1, y-hgt/2, sw, hgt, Math.min(3, sw/3));
+          else cx.rect(x0 + sg.x + 1, y-hgt/2, sw, hgt);
+          cx.fill();
+        });
+        /* The borrowed-note tick sits OUTSIDE the block, so clamp it to the
+         * staff margin or on the first chord it would draw off-canvas and on
+         * the others it would sit inside the previous chord's block. */
+        if (!inScale(p, nn)){
+          cx.fillStyle = "#8B7BE8";
+          cx.fillRect(Math.max(2, x0-4), y-1.5, 3, 3);
+        }
+      });
+    }
+    if (sel){ cx.strokeStyle = "#8B7BE8"; cx.lineWidth = 1.5;
+      cx.strokeRect(x0+.75, TOP+.75, w-1.5, BOT-TOP-1.5); }
+
+    /*
+     * THE NAME IS NOT DRAWN HERE ANY MORE.
+     *
+     * It used to head each block, with a whole apparatus for measuring and
+     * ellipsising it so "Cmaj7" over a quarter-bar block would not overlap its
+     * neighbour. That apparatus existed because the roll was the only place
+     * the name appeared. The strip below now sizes each card to its chord's
+     * LENGTH, so the card sits under the block it names and reads as the same
+     * column -- and a name in both places is the same word twice, with the
+     * roll's copy the one that has to be truncated. Deleting it also returns
+     * the band above the notes to the notes.
+     */
+    at += Math.max(1, c.len);
+  });
+
+  var u = playhead(p, now);
+  if (u !== null){
+    var px = xOf(u);
+    cx.save(); cx.strokeStyle = "#4FD1E0"; cx.lineWidth = 1.6;
+    cx.shadowColor = "#4FD1E0"; cx.shadowBlur = 9;
+    cx.beginPath(); cx.moveTo(px, TOP-8); cx.lineTo(px, BOT+6); cx.stroke(); cx.restore();
+  }
+}
+/*
+ * THE SELECTION IS DRAWN FROM WHAT YOU TAPPED, not from the round trip.
+ *
+ * `prog.sel` is authoritative but arrives with the next publish: set() writes
+ * the value locally and the module echoes it back a moment later. Drawing only
+ * from prog meant the highlight, the strip card and the CHORD bank's scope
+ * lagged the tap visibly. The local value is what the user just asked for, so
+ * it leads; prog corrects it if the module disagrees (a clamp, an insert).
+ */
+/*
+ * The optimistic value is TRANSIENT: it holds only until the next publish.
+ *
+ * Latching it was wrong, because the MODULE moves the selection too -- insert
+ * lands on the new copy, remove shifts to the neighbour, a clamp pulls it into
+ * range. A local value that outlived the round trip overrode all three, so
+ * after `+` the highlight stayed on the chord you copied FROM while the module
+ * was editing the copy. It answers for the gap between the tap and the answer,
+ * and prog wins the moment prog speaks.
+ */
+var selPending = null, selPendingMs = 0;
+/*
+ * A PUBLISH IS NOT AN ANSWER TO OUR WRITE.
+ *
+ * `prog` now arrives whenever ANYTHING moves -- the Move's own jog included --
+ * so a publish that was already in flight when you tapped a card is not the
+ * module answering that tap. Clearing the local selection on any new prog made
+ * the highlight jump back to the old chord for a beat and then forward again.
+ * It is cleared when prog CONFIRMS it, or after SEL_ACK_MS, so a write that
+ * never lands cannot latch the highlight on a lie either.
+ */
+var SEL_ACK_MS = 1200;
+function pendSel(n){ selPending = n; selPendingMs = Date.now(); }
+function selIndex(p){
+  if (selPending !== null && (!p || (selPending >= 1 && selPending <= p.count)))
+    return selPending;
+  return p ? p.sel : 1;
+}
+
+var aMs = 0, aU = 0, aSet = false;
+/*
+ * A QUANTISED REPORT NAMES A RANGE, NOT A POINT.
+ *
+ * `posUnits` is floored to a whole unit, so a module truly at 3.7 reports 3.
+ * Re-anchoring on every publish therefore pulls the drawn head BACK by up to a
+ * whole unit -- an eighth of a step, a third of a second at 98bpm -- and it
+ * runs forward until the next publish pulls it back again. That was invisible
+ * while `prog` only arrived after something was written; with `rui_play`
+ * carrying the position a few times a second it is a judder in the middle of
+ * every chord.
+ *
+ * The report is an INTERVAL, [pos, pos+1). While the drawn position is inside
+ * it the picture and the module agree, and the anchor is left alone. Outside
+ * it -- a wrap, a transport jump, real drift -- it is taken. Slack either side
+ * covers how old the read already was when it reached the browser.
+ */
+function unitsPerSec(p){ return (p.bpm / 60) * ((p.stepUnits || 8) / (p.stepBeats || 4)); }
+function reanchor(p){
+  if (!p){ aMs = performance.now(); aU = 0; aSet = true; return; }
+  var now = performance.now();
+  /* `aSet`, not `aMs`: a clock legitimately reads 0, and testing the timestamp
+     for truthiness made the first anchor look like no anchor -- which snapped
+     on every publish, i.e. exactly the judder this avoids. */
+  if (aSet && p.running){
+    var pred = aU + ((now - aMs) / 1000) * unitsPerSec(p);
+    if (pred >= p.posUnits - 0.25 && pred < p.posUnits + 1.75) return;  /* agreed */
+  }
+  aMs = now; aU = p.posUnits; aSet = true;
+}
+function playhead(p, now){
+  if (!p) return null;
+  /* Stopped and rewound, the head sits at the top rather than vanishing --
+     it is where the next play starts, and it is what Move's own playhead
+     does. Still hidden when the position is creeping on with Move's clock
+     while Run is off, which is a head over silence. */
+  if (!p.running){
+    var c0 = Math.max(1, p.clipUnits || 1);
+    return (p.posUnits % c0) === 0 ? 0 : null;
+  }
+  var u = aU + ((now - aMs)/1000) * unitsPerSec(p), c = Math.max(1, p.clipUnits);
+  return ((u % c) + c) % c;
+}
+
+/*
+ * THE KEYBOARD GUTTER.
+ *
+ * Without it a row is an anonymous horizontal band: the roll draws lanes only
+ * for notes IN the scale, so even counting rows does not tell you a pitch, and
+ * an accidental has no lane at all. The keyboard names every semitone.
+ *
+ * Semitone-linear, one row per key, which is what the roll's own yOf() does --
+ * a literal piano geometry (white keys spanning a key and a half) would look
+ * more like a piano and stop lining up with the notes beside it, and lining up
+ * is the entire job. Live and Logic make the same trade.
+ *
+ * Black keys are drawn AFTER all the whites and inset from the right, so they
+ * read as sitting on top rather than as a darker row of the same thing.
+ */
+var KEY_BLACK = { 1:1, 3:1, 6:1, 8:1, 10:1 };
+function shade(hex, f){
+  var n = parseInt(hex.slice(1), 16);
+  return "rgb(" + Math.round((n >> 16 & 255) * f) + "," +
+                  Math.round((n >> 8 & 255) * f) + "," +
+                  Math.round((n & 255) * f) + ")";
+}
+function drawKeys(cx, x0, x1, lo, hi, yOf, laneH, key, lit, tint){
+  var w = x1 - x0;
+  if (w < 8 || laneH <= 0) return;
+  var kh = Math.max(1, laneH - 1);
+
+  /* The bed, so a gap between keys reads as a seam and not as the grid. */
+  cx.fillStyle = "#0A0E14";
+  cx.fillRect(x0, yOf(hi) - laneH / 2, w, (hi - lo + 1) * laneH);
+
+  for (var pass = 0; pass < 2; pass++){
+    for (var n = lo; n <= hi; n++){
+      var black = !!KEY_BLACK[((n % 12) + 12) % 12];
+      if ((pass === 0) === black) continue;          /* whites, then blacks */
+      var y = yOf(n) - laneH / 2;
+      var kw = black ? w * 0.62 : w;
+      var on = lit && lit[n];
+      var tonic = (((n - key) % 12) + 12) % 12 === 0;
+
+      if (on){
+        /* The SAME colour as the thing it reports -- cyan for the selected
+           chord, gold for one merely sounding. Two colours for one fact is
+           how a picture starts needing a legend. */
+        cx.fillStyle = black ? shade(tint, .62) : tint;
+      } else if (black){
+        cx.fillStyle = "#0E131B";
+      } else {
+        /* A touch of vertical shading, so a column of keys is not a flat slab. */
+        var g = cx.createLinearGradient(0, y, 0, y + kh);
+        g.addColorStop(0, tonic ? "#CFC6F2" : "#E9EEF3");
+        g.addColorStop(1, tonic ? "#B3A6E4" : "#CBD3DC");
+        cx.fillStyle = g;
+      }
+      if (cx.roundRect){
+        cx.beginPath();
+        cx.roundRect(x0, y + .5, kw, kh, [0,2,2,0]);
+        cx.fill();
+      } else {
+        cx.fillRect(x0, y + .5, kw, kh);
+      }
+      /* A lit top edge, so a black key sits ON the whites rather than reading
+         as a hole punched between them. */
+      if (black && !on){
+        cx.strokeStyle = "rgba(255,255,255,.07)"; cx.lineWidth = 1;
+        cx.beginPath(); cx.moveTo(x0, y + 1); cx.lineTo(x0 + kw, y + 1); cx.stroke();
+      }
+
+      /*
+       * THE LABELS NAME THE CHORD, not the keyboard.
+       *
+       * A fixed reference -- every C, or the tonic -- answers "where am I",
+       * which the tonic's violet tint already answers without text, and in any
+       * key but C it doubles the text down the column. Naming the LIT keys
+       * instead spends the same space on the thing being looked at: the notes
+       * the selected or sounding chord is actually made of, spelled out, in
+       * register order. That is the question a chord editor is asked.
+       *
+       * Right-aligned inside the key that carries it -- a black key is 62%
+       * wide, so aligning both to the gutter's edge would hang its label off
+       * the end of the key it belongs to.
+       */
+      /*
+       * THE TONIC IS NAMED TOO, in its own ink.
+       *
+       * Dropping the fixed C labels took the tonic's name with them and left
+       * only the violet tint, which is a whisper next to a white key -- the
+       * root became something you had to hunt for. Two labels, two inks: dark
+       * on the lit key for a chord tone, violet for the key centre. They never
+       * compete, because a tonic that IS a chord tone is lit, and lit wins.
+       */
+      if (laneH >= 8 && (on || tonic)){
+        var pc = ((n % 12) + 12) % 12;
+        cx.fillStyle = on ? "#0B0E13" : "#5B4CA8";
+        cx.font = "700 " + Math.min(9, Math.max(7, laneH - 3)) +
+                  "px ui-monospace,SF Mono,monospace";
+        /*
+         * The key centre reads at the KEY'S OWN CENTRE, hard left: it is a
+         * standing fact, so it sits still while the chord tones -- which come
+         * and go -- name themselves at the far edge. Two positions, two
+         * meanings, and the root never moves when a chord happens to land on
+         * it.
+         */
+        if (tonic){
+          cx.textBaseline = "middle";
+          cx.fillText(NOTE[pc] + (Math.floor(n / 12) - 1),
+                      x0 + 3, y + kh / 2);
+          cx.textBaseline = "alphabetic";
+        } else {
+          cx.textAlign = "right";
+          cx.fillText(NOTE[pc] + (Math.floor(n / 12) - 1),
+                      x0 + kw - 3, y + kh - 2);
+          cx.textAlign = "left";
+        }
+      }
+    }
+  }
+  /* One crisp edge where the keyboard stops and the grid begins. */
+  cx.strokeStyle = "rgba(0,0,0,.55)"; cx.lineWidth = 1;
+  cx.beginPath(); cx.moveTo(x1 - .5, yOf(hi) - laneH / 2);
+  cx.lineTo(x1 - .5, yOf(lo) + laneH / 2); cx.stroke();
+}
+
+/* ═══════════════════════════════ strip ════════════════════════ */
+function drawStrip(p){
+  var el = document.getElementById("strip"); el.innerHTML = "";
+  /* THE "+" IS NOT PART OF THE PROGRESSION, so it must not depend on one.
+     `if (!p) return` sat above it, so a buffer with nothing in it drew no
+     slots AND no add button: the empty state told you to "tap a slot below"
+     when there was nothing below and no way to make one. The one control
+     that CREATES a chord is exactly the control an empty panel needs. */
+  (p ? p.chords : []).forEach(function(c, i){
+    var b = document.createElement("button");
+    b.className = "card" + (i===selIndex(p)-1?" sel":"") + (i===p.playing?" playing":"")
+                + (c.rest?" rest":"") + (c.mute?" muted":"");
+    b.innerHTML = '<span class="nm">'+(c.rest?"—":esc(c.name))+'</span>'
+                + '<span class="ln">'+lenLabel(c.len, p.stepUnits)+(c.mute?" · MUTED":"")+'</span>';
+    /*
+     * Proportional to the chord's length, and NO minimum width.
+     *
+     * A floor looks like a kindness and is the thing that breaks the row: the
+     * moment it exceeds a card's proportional share the run overflows its
+     * container, and every card after the first sits progressively right of
+     * the bar it names. Alignment with the roll is the point of this strip, so
+     * it is the invariant; a dense progression yields narrow cards, exactly as
+     * it yields narrow blocks in the roll above.
+     */
+    b.style.flexGrow = String(Math.max(1, c.len));
+    b.onpointerdown = function(ev){
+      ev.preventDefault(); pendSel(i+1); set("sel", i+1); holdOn();
+    };
+    el.appendChild(b);
+  });
+
+  var add = document.createElement("button");
+  add.className = "card add"; add.textContent = "+";
+  add.setAttribute("aria-label", "Add a chord");
+  /* The module inserts a COPY after the selected chord and lands on it, so
+     the panel must not pin the selection where it was. */
+  add.onclick = function(){ selPending = null; set("insert", "on"); };
+  el.appendChild(add);
+}
+/* Compact form for a narrow stepper: the card says "Length", so the unit is
+   implied and the value alone fits. lenLabel keeps the spelled-out form for
+   the chord cards, where there is room and no label beside it. */
+function lenShort(len, upb){
+  var b = len/(upb||8);
+  if (b === 0.25) return "\u00BC";
+  if (b === 0.5)  return "\u00BD";
+  if (b === 1.5)  return "1\u00BD";
+  return String(Number.isInteger(b) ? b : (+b.toFixed(2)));
+}
+function lenLabel(len, upb){
+  var b = len/(upb||8);
+  return (b===1 ? "1 BAR" : (Number.isInteger(b)?b:(+b.toFixed(2))) + " BARS");
+}
+/*
+ * HOLD TO HEAR, and the DSP was always built for it: `play=on` sets hold_run
+ * and starts the sequence AT the selected chord, `play=off` stops whatever is
+ * still scheduled. Releasing on a fixed 400ms timer threw that away and made
+ * every press a stab, however long you held it. The progression now runs from
+ * the chord you are pressing for as long as you press it, which is what the
+ * Move's own pads do.
+ *
+ * The stop is bound to WINDOW, not to the button. A release does not reliably
+ * land on the element that got the press -- a finger that slides off, a
+ * cancelled touch, the tab losing focus -- and every one of those would leave
+ * hold_run set with the notes ringing.
+ */
+var holding = false;
+function holdOn(){ if (!holding){ holding = true; set("play", "on"); } }
+function holdOff(){ if (holding){ holding = false; set("play", "off"); } }
+window.addEventListener("pointerup", holdOff);
+window.addEventListener("pointercancel", holdOff);
+window.addEventListener("blur", holdOff);
+/* A tab hidden or closed mid-press never sends the release, and the module
+   would hold the chord for the rest of the session. */
+window.addEventListener("pagehide", holdOff);
+document.addEventListener("visibilitychange", function(){
+  if (document.visibilityState === "hidden") holdOff();
+});
+/* Still momentary for the EDIT controls (a degree, a root): those change the
+   chord and play it once so you hear what you picked. */
+function audition(){ set("play","on"); setTimeout(function(){ set("play","off"); }, 400); }
+
+/* ═══════════════════════════════ the banks ════════════════════
+ * THE TABS ARE THE BANKS — same six names, same order as Shift+Jog
+ * on the hardware. A second grouping is how a module gets confusing.
+ * ═════════════════════════════════════════════════════════════ */
+var BANKS = [
+  { id:"main",  name:"MAIN",  scope:"prog",
+    keys:["scale","key","defoct","steps","rate","bars","grouping","lanes"] },
+  { id:"start", name:"START", scope:"prog",
+    keys:["genre","progression","common","uncommon","colour"] },
+  { id:"chord", name:"CHORD", scope:"chord",
+    keys:["degree","root","coct","family","shape","inv","len","off","cvel"] },
+  { id:"voice", name:"VOICE", scope:"chord",
+    keys:["ccolour","cstrum","cgate","cmute","rhythm","ctrans"] },
+  { id:"feel",  name:"FEEL",  scope:"prog",
+    keys:["velocity","gate","swing","hum_vel","roll_vel","hum_time","roll_time"] },
+  { id:"clip",  name:"CLIP",  scope:"prog",
+    /* `preview` moved to the header transport button; `run` stays, it is a
+       mode (follow Move's clock) rather than a transport. */
+    /* There is no file stamp: it cannot win against Move, which holds the
+       active set in memory and autosaves over it (measured at 142s). Stamp
+       arms one lap for Move's own recorder. */
+    /* Clip Transpose and Clip Octave lead: they are what you reach for while
+       it plays, and MAIN is setup. Same pair, same order as the Move's bank. */
+    keys:["patterns","transpose","octave","read","read_mode","read_track","stamp",
+          "clear","run","duplicate","stretch","compress","undo"] },
+];
+var bank = "chord";
+
+function buildTabs(){
+  var t = document.getElementById("tabs"); t.innerHTML = "";
+  BANKS.forEach(function(B){
+    var b = document.createElement("button");
+    b.className = "tab"; b.textContent = B.name; b.setAttribute("role","tab");
+    b.setAttribute("aria-selected", String(B.id === bank));
+    b.onclick = function(){ bank = B.id; buildTabs(); buildPane(); };
+    t.appendChild(b);
+  });
+}
+
+/* ═══════════════════════════════ controls ═════════════════════
+ * Where a parameter has a SHAPE, the control draws that shape.
+ * Where it is genuinely a quantity, it stays a slider — a diagram
+ * there would be decoration.
+ * ═════════════════════════════════════════════════════════════ */
+/*
+ * How wide a control sits, in sixths of the rail. Absent = full width.
+ * This is LAYOUT, not meaning, so it lives beside the bank list rather than
+ * being inferred from the widget: "an octave and an inversion pair" and
+ * "length, offset and velocity make a row of three" are compositional calls
+ * about this panel, and a rule derived from the control type could not tell
+ * those two groupings apart.
+ */
+var SPAN = { patterns:6,
+  /* Inversion, Length and Offset are one even row of three: they are the
+     three numbers that describe WHEN and HOW a chord sits, and reading them
+     together is the point. Velocity takes the row after, on its own -- it is
+     a level, not one of that trio. Chord Oct stays full width rather than
+     sitting half-empty beside a gap. */
+  inv:2, len:2, off:2,
+  defoct:3, transpose:3, steps:3, bars:3,
+  vel:2, gate:2, strum:2,
+  /* CLIP: the two-option modes and the actions pair up, so the bank is read
+     as rows of related things rather than one column of full-width cards. */
+  transpose:3, octave:3,
+  read_mode:3, read_track:3, lanes:3, run:3,
+  read:3, stamp:3, clear:3, duplicate:3, stretch:3, compress:3, undo:3
+};
+/*
+ * SIXTEEN PATTERN SLOTS -- the same sixteen the Move's PATTERNS pad page
+ * shows, in the same shape, reading the same one value.
+ *
+ * YOU ARE ALWAYS IN A SLOT and everything runs against it, so a click SWITCHES
+ * (there is no load step and no save step -- what you wrote stays in the slot
+ * you wrote it in), a HOLD copies what you are playing into another slot and
+ * carries on there, and the DELETE toggle turns the grid into a delete surface
+ * rather than hiding deletion behind a modifier a mouse does not have.
+ *
+ * Three colours, because pressing cannot tell you which state a slot is in:
+ * dark is empty, blue holds music, gold is the one you are in -- and it lights
+ * as the first chord is written, since `used` for the active slot is read from
+ * the live buffer rather than from a save that never happens.
+ *
+ * It is a "key" on the CLIP bank without being a param: `patterns` is read-only
+ * on the module, and the three verbs are separate write params.
+ */
+var patDel = false;
+function patternControl(){
+  var el = shell("PATTERNS", "");
+  var raw = String(get("patterns") || "0000|0").split("|");
+  var mask = parseInt(raw[0], 16) || 0, cur = parseInt(raw[1], 10) || 0;
+  var grid = document.createElement("div"); grid.className = "pats";
+  for (var i = 1; i <= 16; i++) (function(n){
+    var b = document.createElement("button");
+    var filled = (mask >> (n - 1)) & 1;
+    b.className = "pat" + (filled ? " full" : "") + (n === cur ? " cur" : "");
+    b.textContent = String(n);
+    b.setAttribute("aria-label", "Pattern " + n + (filled
+        ? (n === cur ? ", loaded" : ", stored") : ", empty"));
+    var t = 0, held = false;
+    b.onpointerdown = function(ev){
+      ev.preventDefault();
+      if (patDel){ set("pat_delete", n); return; }
+      held = false;
+      t = setTimeout(function(){ held = true; set("pat_store", n); }, 500);
+    };
+    var up = function(){
+      clearTimeout(t);
+      if (patDel || held) return;
+      /*
+       * A TAP ACTIVATES, full or empty.
+       *
+       * You are always IN a slot and everything runs against it, so an empty
+       * slot is not a hole to fall into -- it is where the next pattern gets
+       * written. Nothing is lost by leaving: the module writes the buffer
+       * through to the slot you are leaving before it reads the new one.
+       *
+       * Two earlier versions got this wrong in opposite directions -- one
+       * captured the buffer into an empty slot on a tap, the other refused the
+       * tap entirely -- and both made the panel disagree with the Move.
+       */
+      set("pat_recall", n);
+    };
+    b.onpointerup = up;
+    b.onpointercancel = function(){ clearTimeout(t); };
+    grid.appendChild(b);
+  })(i);
+  el.appendChild(grid);
+  var row = document.createElement("div"); row.className = "patrow";
+  var hint = document.createElement("span");
+  hint.className = "pathint";
+  hint.textContent = patDel ? "tap a slot to clear it" : "tap to switch · hold to copy here";
+  var del = document.createElement("button");
+  del.className = "patdel" + (patDel ? " on" : "");
+  del.textContent = patDel ? "CANCEL" : "DELETE";
+  del.setAttribute("aria-pressed", String(patDel));
+  del.onclick = function(){ patDel = !patDel; render(); };
+  row.appendChild(hint); row.appendChild(del);
+  el.appendChild(row);
+  return el;
+}
+
+var BESPOKE = {
+  patterns: patternControl,
+  root: kbdControl, key: kbdControl,
+  rhythm: rhythmControl,
+  degree: degreeControl,
+  ccolour: voicingControl, colour: voicingControl,
+  len: durationControl,
+  swing: swingControl,
+  cgate: gateControl, gate: gateControl,
+};
+
+/*
+ * `value == null` builds a header with NO readout.
+ *
+ * Every picker here already shows its selection -- the pressed segment, the
+ * held key, the stepper's own number -- so printing it again in the header
+ * said the same word twice on one card ("triad" beside a lit `triad`). The
+ * readout is kept only for widgets that draw a shape rather than a value.
+ */
+function shell(label, value){
+  var d = document.createElement("div"); d.className = "ctl";
+  d.innerHTML = '<label><span class="k">'+esc(label)+'</span>'
+              + (value == null ? "" : '<span class="v">'+esc(value)+'</span>')
+              + '</label>';
+  return d;
+}
+function name(k){ return (META[k] && (META[k].name || k)) || k; }
+
+/* ── ROOT / KEY: a note is a keyboard ───────────────────────── */
+function kbdControl(k){
+  var cur = String(get(k) || "");
+  var pc  = cur.replace(/[0-9]/g,""), oct = (cur.match(/\d+/)||[""])[0];
+  var d = shell(name(k), null);
+  var kb = document.createElement("div"); kb.className = "kbd";
+  var whites = ["C","D","E","F","G","A","B"], blacks = [["C#",10.4],["D#",24.7],["F#",53.4],["G#",67.7],["A#",82]];
+  whites.forEach(function(w){
+    var b = document.createElement("button"); b.className = "wk"; b.dataset.n = w;
+    b.setAttribute("aria-pressed", String(pc === w));
+    if (prog && !inScale(prog, NOTE.indexOf(w))) b.classList.add("dimmed");
+    b.onclick = function(){ set(k, k === "key" ? w : w + (oct||3)); audition(); };
+    kb.appendChild(b);
+  });
+  blacks.forEach(function(pair){
+    var b = document.createElement("button"); b.className = "bk";
+    b.style.left = pair[1] + "%"; b.setAttribute("aria-pressed", String(pc === pair[0]));
+    b.onclick = function(){ set(k, k === "key" ? pair[0] : pair[0] + (oct||3)); audition(); };
+    kb.appendChild(b);
+  });
+  d.appendChild(kb);
+  if (k === "root"){
+    var row = document.createElement("div"); row.className = "octrow";
+    [1,2,3,4,5].forEach(function(o){
+      var b = document.createElement("button"); b.textContent = o;
+      b.setAttribute("aria-pressed", String(String(o) === String(oct)));
+      b.onclick = function(){ set("root", (pc||"C") + o); audition(); };
+      row.appendChild(b);
+    });
+    d.appendChild(row);
+  }
+  return d;
+}
+
+/* ── RHYTHM: the figure, as the hits it plays ───────────────── */
+/* The masks live in the DSP; these are the same figures, drawn -- generated.
+   A name cannot tell you what "baiao" sounds like; a pattern can. */
+/* ---- BEGIN GENERATED rhythms (tools/gen_chain_params.py) ---- */
+var RHY = {"hold":0x0001,"half":0x0101,"quarter":0x1111,"eighth":0x5555,"16th":0xFFFF,"offbeat":0x4444,"dotted":0x9249,"push":0x0180,"tresillo":0x4949,"son 3-2":0x1449,"son 2-3":0x4914,"rumba":0x1489,"bossa":0x2449,"baiao":0x0909,"montuno":0x4D4D,"charl":0x0041,"charl 2":0x0401,"shuffle":0x2121,"comp":0x0849,"gallop":0x1919,"drive":0x554D,"anthem":0x4141,"garage":0x0449,"broken":0x0441,"backbeat":0x1010,"deep stab":0x0404,"after kick":0x2222,"gate":0x9999,"two-step":0x0541,"one drop":0x0100,"heartbeat":0x0505,"in three":0x0821,"and four":0x1001,"anticipate":0x0081,"cascara":0xADAD};
+/* ---- END GENERATED rhythms ---- */
+function rhythmControl(k){
+  var cur = get(k), opts = (META[k] && META[k].options) || Object.keys(RHY);
+  var d = shell(name(k), null);
+  var list = document.createElement("div"); list.className = "rlist";
+  list.setAttribute("data-scroll", k);
+  opts.forEach(function(o){
+    var b = document.createElement("button");
+    b.className = "rrow"; b.setAttribute("aria-pressed", String(String(cur) === o));
+    var m = RHY[o] || 1, svg = '<svg viewBox="0 0 160 11" aria-hidden="true">';
+    for (var i = 0; i < 16; i++) if (m & (1 << i))
+      svg += '<rect x="'+(i*10)+'" y="1" width="8" height="9" rx="2"/>';
+    svg += '</svg>';
+    b.innerHTML = '<span>'+esc(o)+'</span>' + svg;
+    b.onclick = function(){ set(k, o); };
+    list.appendChild(b);
+  });
+  d.appendChild(list);
+  return d;
+}
+
+/* ── DEGREE: the numeral AND the chord it is in your key ────── */
+function degreeControl(k){
+  var d = shell("DEGREE" + (prog ? " · " + NOTE[prog.key] + " " + shortScale() : ""), get(k));
+  var wrap = document.createElement("div"); wrap.className = "deg";
+  var semis = [];
+  if (prog) for (var s = 0; s < 12; s++) if (prog.mask & (1<<s)) semis.push(s);
+  var ROMAN = ["I","II","III","IV","V","VI","VII"];
+  ROMAN.forEach(function(rn, i){
+    var b = document.createElement("button");
+    var exists = i < semis.length;
+    var label = rn, chord = "";
+    if (exists){
+      /* Quality from the SCALE itself: stack thirds through its own notes,
+         so a pentatonic or a blues names its chords honestly rather than
+         being forced into a major/minor template. */
+      var r = semis[i], th = semis[(i+2) % semis.length] , fi = semis[(i+4) % semis.length];
+      var t3 = ((th - r) + 12) % 12, t5 = ((fi - r) + 12) % 12;
+      var minor = (t3 === 3), dim = (t5 === 6), aug = (t5 === 8);
+      label = minor || dim ? rn.toLowerCase() : rn;
+      if (dim) label += "°"; else if (aug) label += "+";
+      chord = NOTE[(prog.key + r) % 12] + (dim ? "°" : minor ? "m" : aug ? "+" : "");
+    }
+    b.innerHTML = "<b>"+label+"</b><span>"+(chord||"—")+"</span>";
+    b.setAttribute("aria-pressed", String(get(k) === ROMAN[i]));
+    if (!exists) b.className = "off";
+    b.onclick = function(){ set(k, ROMAN[i]); audition(); };
+    wrap.appendChild(b);
+  });
+  var rest = document.createElement("button");
+  rest.innerHTML = "<b>—</b><span>rest</span>";
+  rest.onclick = function(){ set(k, "rest"); };
+  wrap.appendChild(rest);
+  d.appendChild(wrap);
+  return d;
+}
+
+/* ── COLOUR: a voicing is where the notes sit ───────────────── */
+/* y positions per voicing, and `gone` marks a note the voicing REMOVES. */
+var VOICE_SHAPE = {
+  "close":    [[26,0],[19,0],[12,0]],
+  "open":     [[30,0],[18,0],[6,0]],
+  "drop2":    [[31,0],[17,0],[10,0]],
+  "drop3":    [[31,0],[20,0],[7,0]],
+  "drop2+4":  [[31,0],[24,0],[9,0]],
+  "shell":    [[26,0],[19,1],[12,0]],
+  "rootless": [[30,1],[22,0],[15,0],[8,0]],
+  "quartal":  [[30,0],[21,0],[12,0],[3,0]],
+  "spread":   [[31,0],[20,0],[9,0]],
+  "cluster":  [[24,0],[20,0],[16,0]]
+};
+function voicingControl(k){
+  var cur = get(k), opts = (META[k] && META[k].options) || Object.keys(VOICE_SHAPE);
+  var d = shell(name(k), null);
+  var g = document.createElement("div"); g.className = "vgrid";
+  opts.forEach(function(o){
+    var b = document.createElement("button");
+    b.setAttribute("aria-pressed", String(String(cur) === o));
+    var pts = VOICE_SHAPE[o] || VOICE_SHAPE.close, svg = '<svg viewBox="0 0 28 32" aria-hidden="true">';
+    pts.forEach(function(pt){
+      svg += '<circle cx="14" cy="'+pt[0]+'" r="3"'+(pt[1]?' class="gone"':'')+'/>';
+    });
+    svg += '</svg>';
+    b.innerHTML = svg + '<span>'+esc(o)+'</span>';
+    b.onclick = function(){ set(k, o); audition(); };
+    g.appendChild(b);
+  });
+  d.appendChild(g);
+  return d;
+}
+
+/* ── LENGTH: a duration is a width ─────────────────────────── */
+/*
+ * LENGTH steps the MUSICAL ladder, not raw eighths. The underlying unit is an
+ * eighth of a bar, so a bare -/+ would need eight presses to add one bar and
+ * would happily stop on 5/8 of one. The ladder is the same set the buttons
+ * offered; the stepper just walks it, and lands off-ladder values on the
+ * nearest rung so a length set from the hardware is still steppable.
+ */
+function durationControl(k){
+  var upb = (prog && prog.stepUnits) || 8, cur = +get(k) || upb;
+  var ladder = [upb/4, upb/2, upb, upb*1.5, upb*2, upb*3, upb*4, upb*8]
+                 .map(function(u){ return Math.round(u); });
+  var d = shell(name(k), null); d.className += " half";
+  var hv = d.querySelector(".v"); if (hv) hv.remove();
+  var row = document.createElement("div"); row.className = "step";
+  var dec = document.createElement("button"); dec.textContent = "\u2212";
+  dec.setAttribute("aria-label", "Shorter");
+  var out = document.createElement("span");
+  var inc = document.createElement("button"); inc.textContent = "+";
+  inc.setAttribute("aria-label", "Longer");
+  function nearest(v){
+    var best = 0;
+    for (var i = 1; i < ladder.length; i++)
+      if (Math.abs(ladder[i]-v) < Math.abs(ladder[best]-v)) best = i;
+    return best;
+  }
+  var idx = nearest(cur);
+  function paint(){
+    out.textContent = lenShort(ladder[idx], upb);
+    dec.disabled = idx <= 0; inc.disabled = idx >= ladder.length-1;
+  }
+  function go(delta){
+    idx = Math.max(0, Math.min(ladder.length-1, idx + delta));
+    paint(); set(k, ladder[idx]);
+  }
+  paint();
+  dec.onclick = function(){ go(-1); };
+  inc.onclick = function(){ go(1); };
+  row.appendChild(dec); row.appendChild(out); row.appendChild(inc);
+  d.appendChild(row);
+  return d;
+}
+
+/* ── SWING: a feel is a displacement, so show it ────────────── */
+function swingControl(k){
+  var m = META[k] || {min:0,max:75}, cur = +get(k) || 0;
+  var d = shell(name(k), cur + "%");
+  var svg = document.createElementNS("http://www.w3.org/2000/svg","svg");
+  svg.setAttribute("class","tim"); svg.setAttribute("viewBox","0 0 200 30");
+  function paint(v){
+    var push = (v/100) * 25;
+    var h = "";
+    for (var i = 0; i < 4; i++){
+      var x = i*50 + (i % 2 ? push : 0);
+      h += '<rect x="'+x+'" y="8" width="9" height="14" rx="2" fill="#F2A33C"/>';
+    }
+    svg.innerHTML = '<line x1="0" y1="24" x2="200" y2="24" stroke="#28313D"/>'
+      + '<g stroke="#242D39" stroke-dasharray="2 3">'
+      + '<line x1="0" y1="6" x2="0" y2="24"/><line x1="50" y1="6" x2="50" y2="24"/>'
+      + '<line x1="100" y1="6" x2="100" y2="24"/><line x1="150" y1="6" x2="150" y2="24"/></g>' + h;
+  }
+  paint(cur);
+  drag(svg, m, function(v){ paint(v); d.querySelector(".v").textContent = v + "%"; },
+       function(v){ set(k, v); });
+  d.appendChild(svg);
+  return d;
+}
+
+/* ── GATE: how much of the slot sounds ─────────────────────── */
+function gateControl(k){
+  var m = META[k] || {min:0,max:100}, cur = +get(k); if (!isFinite(cur)) cur = m.min;
+  var pct = function(v){ return ((v - m.min) / Math.max(1, m.max - m.min)) * 100; };
+  var d = shell(name(k), String(cur));
+  var svg = document.createElementNS("http://www.w3.org/2000/svg","svg");
+  svg.setAttribute("class","tim"); svg.setAttribute("viewBox","0 0 200 30");
+  function paint(v){
+    var w = Math.max(2, (pct(v)/100) * 196);
+    svg.innerHTML = '<rect x="2" y="7" width="196" height="16" rx="3" fill="#0F151E" stroke="#28313D"/>'
+      + '<rect x="2" y="7" width="'+w+'" height="16" rx="3" fill="#F2A33C"/>'
+      + '<line x1="'+(2+w)+'" y1="2" x2="'+(2+w)+'" y2="28" stroke="#4B5765" stroke-dasharray="2 3"/>';
+  }
+  paint(cur);
+  drag(svg, m, function(v){ paint(v); d.querySelector(".v").textContent = String(v); },
+       function(v){ set(k, v); });
+  d.appendChild(svg);
+  return d;
+}
+
+/* One drag handler for every continuous control. */
+function drag(el, m, preview, commit){
+  var lo = (m.min|0), hi = (m.max|0), last = null;
+  function at(e){
+    var r = el.getBoundingClientRect();
+    var x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+    var v = Math.round(lo + Math.max(0, Math.min(1, x/r.width)) * (hi - lo));
+    if (v !== last){ last = v; preview(v); commit(v); }
+  }
+  el.addEventListener("pointerdown", function(e){
+    el.setPointerCapture(e.pointerId); at(e); e.preventDefault(); });
+  el.addEventListener("pointermove", function(e){
+    if (el.hasPointerCapture && el.hasPointerCapture(e.pointerId)) at(e); });
+}
+
+/* ── generic fallbacks: only where nothing is worth drawing ── */
+function genericControl(k){
+  var m = META[k]; if (!m) return null;
+  if (m.access === "write" && m.options && m.options.length === 2) return actionControl(k);
+  if (m.options) return listControl(k);
+  /* A SHORT range is a set of values, not a continuum: step it. The cut is on
+     the SPAN, so it follows the parameter rather than a list of key names that
+     would have to be maintained beside it. */
+  if ((m.max|0) - (m.min|0) <= 16) return stepperControl(k);
+  return sliderControl(k);
+}
+function stepperControl(k){
+  var m = META[k] || {min:0,max:100}, lo = m.min|0, hi = m.max|0;
+  var cur = +get(k); if (!isFinite(cur)) cur = lo;
+  /* A stepper's number IS the control, so the card header does not repeat it
+     -- the header .v exists for controls whose widget cannot show a value. */
+  var d = shell(name(k), null); d.className += " half";
+  var hv = d.querySelector(".v"); if (hv) hv.remove();
+  var row = document.createElement("div"); row.className = "step";
+  var dec = document.createElement("button"); dec.textContent = "\u2212";
+  dec.setAttribute("aria-label", "Decrease " + name(k));
+  var out = document.createElement("span"); out.textContent = String(cur);
+  var inc = document.createElement("button"); inc.textContent = "+";
+  inc.setAttribute("aria-label", "Increase " + name(k));
+  function go(delta){
+    var v = Math.max(lo, Math.min(hi, (+out.textContent || 0) + delta));
+    out.textContent = String(v);
+    dec.disabled = v <= lo; inc.disabled = v >= hi;
+    set(k, v);
+  }
+  dec.disabled = cur <= lo; inc.disabled = cur >= hi;
+  dec.onclick = function(){ go(-1); };
+  inc.onclick = function(){ go(1); };
+  row.appendChild(dec); row.appendChild(out); row.appendChild(inc);
+  d.appendChild(row);
+  return d;
+}
+function listControl(k){
+  var m = META[k], cur = get(k), opts = m.options || [];
+  if (k === "family" && FAMILY_RUNS){
+    var bi = browseFamIndex();
+    if (bi >= 0) cur = FAMILY_RUNS[bi].name;
+  }
+  if (k === "progression" && GENRE_RUNS){
+    var pg = presetsInGenre(opts);
+    /* Keep the loaded preset visible even if Genre has moved on, or the list
+       shows no pressed entry and reads as broken. */
+    if (pg && pg.indexOf(cur) < 0 && opts.indexOf(cur) >= 0) pg = pg.concat([cur]);
+    if (pg) opts = pg;
+  }
+  if (k === "shape"){
+    var fam = shapesInFamily(opts);
+    /* Keep the current shape visible even if Family has moved on, or the
+       control would show no pressed button and look broken. */
+    if (fam && fam.indexOf(cur) < 0 && opts.indexOf(cur) >= 0) fam = fam.concat([cur]);
+    if (fam) opts = fam;
+  }
+  var d = shell(name(k), null);
+  var seg = document.createElement("div"); seg.className = "seg";
+  opts.forEach(function(o){
+    var b = document.createElement("button"); b.textContent = o;
+    b.setAttribute("aria-pressed", String(String(cur) === String(o)));
+    b.onclick = function(){
+      /* An explicit tap is the one thing allowed to LOWER the browse depth. */
+      if (k === "family"){ var j = famIndexOf(o); if (j >= 0) browseFam = j; }
+      set(k, o);
+    };
+    seg.appendChild(b);
+  });
+  if (opts.length > 8){ var w = document.createElement("div"); w.className = "pick";
+    w.setAttribute("data-scroll", k);
+    w.appendChild(seg); d.appendChild(w); } else d.appendChild(seg);
+  return d;
+}
+function sliderControl(k){
+  var m = META[k] || {min:0,max:100}, lo = m.min|0, hi = m.max|0;
+  var cur = +get(k); if (!isFinite(cur)) cur = lo;
+  var d = shell(name(k), null); d.className += " half";
+  var s = document.createElement("div");
+  var bipolar = lo < 0;
+  s.className = "slide" + (bipolar ? " bi" : "");
+  s.innerHTML = '<i></i><u></u>';
+  var fill = s.firstElementChild, lab = s.lastElementChild;
+  function paint(v){
+    if (bipolar){
+      /* Bipolar fills from the CENTRE — a left-anchored fill lies about
+         where zero is, and zero is what matters on every offset here. */
+      var half = 50 * (Math.abs(v) / Math.max(1, Math.max(Math.abs(lo), Math.abs(hi))));
+      fill.style.left = v < 0 ? (50 - half) + "%" : "50%";
+      fill.style.width = half + "%";
+    } else {
+      fill.style.left = "0"; fill.style.width = (((v-lo)/Math.max(1,hi-lo))*100) + "%";
+    }
+    lab.textContent = String(v);
+  }
+  paint(cur);
+  drag(s, m, paint, function(v){ set(k, v); });
+  d.appendChild(s);
+  return d;
+}
+/*
+ * AN ACTION IS THE BUTTON. It used to be a card with a label above a button
+ * that said the same word -- "Clear" over CLEAR, "Stamp Clip" over STAMP CLIP
+ * -- which is the name twice and a card's worth of chrome to hold it. Six of
+ * those on CLIP was most of the bank's height spent saying nothing new.
+ *
+ * The button carries the card's own frame instead, so it reads as one control
+ * and the label is where it always was: on the thing you press.
+ */
+function actionControl(k){
+  var b = document.createElement("button");
+  b.className = "ctl act-btn half" + (/clear|remove/.test(k) ? " warn" : "");
+  /*
+   * STAMP MEANS TWO DIFFERENT THINGS and the button said one word for both.
+   * In `write file` it splices the clip into Song.abl. In `rec arm` -- the
+   * DEFAULT -- it writes no file at all: it restarts the progression and plays
+   * ONE LAP for Move to record into an armed track. Pressing it with nothing
+   * armed is silent and looks exactly like a broken stamp, which is what it
+   * was taken for. The label says which one you are about to get.
+   */
+  var label = name(k) || k;
+  /* One stamp, one meaning. The mode is no longer a question the UI asks. */
+  if (k === "stamp") label = "Arm 1 lap";
+  b.textContent = label.toUpperCase();
+  b.setAttribute("aria-label", label);
+  b.onclick = function(){
+    if (k === "stamp"){
+      set(k, "on");
+      /* Nothing to remember: the module reports `armed` from here, and it
+         reports it to the Move's screen at the same time. */
+      pollStatus();
+      return;
+    }
+    set(k, "on");
+    if (k === "read"){ noteJobStarted(); pollStatus(); }
+  };
+  return b;
+}
+
+/*
+ * THE PANE IS NOT REBUILT UNLESS SOMETHING IT SHOWS CHANGED, and when it is
+ * rebuilt the scroll positions come back.
+ *
+ * render() runs on every param update and every prog tick, and this used to
+ * wipe innerHTML and recreate all nine controls each time. Two costs: the
+ * Chord Shape list scrolled back to the top whenever anything moved -- so
+ * picking another chord threw away the part of the list you were reading --
+ * and a control could be rebuilt out from under a finger mid-gesture.
+ *
+ * The signature covers the bank, the values it renders and the selected
+ * chord, which is exactly the set of facts the DOM below depends on.
+ */
+var paneSig = null;
+function buildPane(){
+  var pane = document.getElementById("pane");
+  var B = BANKS.filter(function(x){ return x.id === bank; })[0];
+  if (!B) return;
+  var sc = document.getElementById("scope");
+  var si = selIndex(prog);
+  var selName = prog && prog.chords[si-1] ? prog.chords[si-1].name : "";
+  sc.className = "scope " + (B.scope === "chord" ? "chord" : "prog");
+  sc.textContent = B.scope === "chord"
+    ? "● CHORD " + si + (selName ? " · " + selName : "")
+    : "● WHOLE PROGRESSION";
+  /*
+   * THE SIGNATURE MUST INCLUDE WHICH KEYS HAVE METADATA, not just their values.
+   *
+   * META arrives after the first paint. Keyed on values alone, the first render
+   * built an EMPTY pane (no META, so every control was skipped) and then stored
+   * that signature -- and when the metadata landed the values had not changed,
+   * so the pane was never rebuilt. The bank came up blank and only appeared
+   * after switching tabs and back, because that changed the signature.
+   *
+   * A cache key computed from an incomplete read is a cached verdict about a
+   * read that had not answered yet; naming the resolved keys in the key is what
+   * makes the arrival of metadata a change.
+   */
+  var ready = B.keys.filter(function(k){ return !!META[k]; });
+  /* Family decides which shapes the picker lists, so it is part of the DOM's
+     inputs even on a bank that does not render it. */
+  var sig = bank + "|" + si + "|" + browseFamIndex() + "|" +
+            ready.join("+") + "|" +
+            B.keys.map(function(k){ return k + "=" + get(k); }).join(",");
+  if (sig === paneSig) return;
+  paneSig = sig;
+
+  /* Where each scroller was, keyed by the param it belongs to. */
+  var atTop = {};
+  [].forEach.call(pane.querySelectorAll("[data-scroll]"), function(el){
+    atTop[el.getAttribute("data-scroll")] = el.scrollTop;
+  });
+
+  pane.innerHTML = "";
+  B.keys.forEach(function(k){
+    /* A BESPOKE control knows its own shape, so it does not need META -- which
+       `patterns` has none of: it is a read-only extra key, not a param. */
+    if (!META[k] && !BESPOKE[k]) return;
+    var el = (BESPOKE[k] || genericControl)(k);
+    if (!el) return;
+    el.classList.remove("half", "third");
+    if (SPAN[k] === 3) el.classList.add("half");
+    else if (SPAN[k] === 2) el.classList.add("third");
+    pane.appendChild(el);
+  });
+
+  [].forEach.call(pane.querySelectorAll("[data-scroll]"), function(el){
+    var y = atTop[el.getAttribute("data-scroll")];
+    if (y) el.scrollTop = y;
+  });
+}
+
+/* ═══════════════════════════════ render ═══════════════════════ */
+var prog = null, lastStr = "";
+function shortScale(){ return String(get("scale") || "Minor").replace("Major","maj").replace("Minor","min"); }
+function render(){
+  var s = get("prog") || (DEMO ? DEMO_PROG : "");
+  if (s !== lastStr){
+    lastStr = s; prog = parseProg(s); reanchor(prog);
+    /* Answered, or given up on -- see pendSel. Either way prog is the truth
+       from here, and it is the truth whichever surface last moved it. */
+    if (selPending !== null && (!prog || prog.sel === selPending
+                                || Date.now() - selPendingMs > SEL_ACK_MS))
+      selPending = null;
+  }
+  document.getElementById("demoBadge").hidden = !DEMO;
+  if (prog){
+    document.getElementById("sKey").textContent = NOTE[prog.key] + " " + shortScale();
+    document.getElementById("sBars").textContent = String(Math.round(prog.clipUnits/(prog.stepUnits||8)));
+    document.getElementById("sBpm").textContent = String(prog.bpm);
+    document.getElementById("sLive").className = "live" + (prog.running ? " on" : "");
+    document.getElementById("hint").hidden = !prog.chords.every(function(c){ return c.rest; });
+  }
+  paintTransport();
+  paintStatus();
+  drawStrip(prog);
+  buildPane();
+}
+(function frame(){ drawRoll(prog, performance.now()); paintStatus();
+                   requestAnimationFrame(frame); })();
+cv.addEventListener("pointerdown", function(e){
+  var r = cv.getBoundingClientRect(), x = e.clientX - r.left;
+  for (var i = 0; i < hits.length; i++)
+    if (x >= hits[i].x && x <= hits[i].x + hits[i].w){
+      pendSel(hits[i].i+1); set("sel", hits[i].i+1); holdOn(); return; }
+});
+
+/*
+ * A LONG ACTION NEEDS TO BE ASKED AGAIN.
+ *
+ * Read Clip and Stamp Clip hand the work to a worker thread and return at once
+ * -- that is the realtime rule, not a shortcut -- so `status` becomes "working"
+ * and then "ok"/"failed" some time AFTER the write that started it. The host
+ * re-reads a component's params once, ~250ms after a write, so the panel asked
+ * exactly once and always too early: the button reported nothing and a failure
+ * looked identical to a success.
+ *
+ * So poll while a job could be in flight. resubscribe() asks the host for a
+ * fresh read; a handful of them over a few seconds costs nothing next to a
+ * file splice, and stops as soon as the verdict lands.
+ */
+function pollStatus(){
+  if (!R || !R.resubscribe) return;
+  var tries = 0;
+  (function again(){
+    /* Stop once the verdict has been RECORDED for this job -- not merely once
+       `status` reads ok, which it may already have from the previous one. */
+    if (tries++ > 14 || jobDone) return;
+    R.resubscribe();
+    setTimeout(again, 400);
+  })();
+}
+
+/* Undo / redo / delete. Write triggers: the value is the word "on". */
+(function(){
+  var fire = function(key){ return function(){ set(key, "on"); }; };
+  var byp = document.getElementById("actBypass");
+  /* No chain host, no bypass: a tool is on or it is not loaded. */
+  if (TOOL) byp.hidden = true;
+  byp.onclick = function(){
+    /* `bypassed` belongs to the CHAIN HOST, not to stacks -- it is read and
+       written on the component prefix but never reaches the plugin. */
+    set("bypassed", String(get("bypassed") === "1" ? 0 : 1));
+  };
+  document.getElementById("actUndo").onclick = fire("undo");
+  document.getElementById("actRedo").onclick = fire("redo");
+  document.getElementById("actDel").onclick = function(){
+    /* The strip is the picture of what this deletes, so re-point the local
+       selection at what will take its place -- otherwise the highlight names
+       a chord that no longer exists until prog comes back. */
+    var n = prog ? prog.count : 0, cur = selIndex(prog);
+    if (n <= 1) return;
+    set("remove", "on");
+    /* Optimistic only for the gap: the removed slot is gone, so point at what
+       takes its place. Cleared by the next publish either way. */
+    pendSel(cur > n - 1 ? n - 1 : cur);
+  };
+})();
+
+/*
+ * THE TRANSPORT BUTTON ANSWERS "IS STACKS SOUNDING", NOT "IS PREVIEW ON".
+ *
+ * The module plays for THREE reasons and the button only knew about one of
+ * them: `preview` (its own loop), `hold_run` (a held chord), and Move's own
+ * transport, which drives it whenever Run is on. Nothing wrote a param for
+ * that last one, so while the browser could not see the playhead the
+ * disagreement was invisible. The moment it could, the panel was drawing a
+ * sweeping playhead beside a button that said "play" -- and pressing STOP set
+ * `preview` off, which is not what was making the sound, so the music carried
+ * on. Two surfaces, two different ideas of what "playing" meant.
+ *
+ * `prog.running` is the module's own answer to that question and BOTH surfaces
+ * already draw from it -- the Move's staff sweeps its playhead off the same
+ * bit. So the button reports it, and STOPS WHATEVER IS MAKING THE SOUND:
+ *
+ *   preview loop/chord  ->  preview off       (our own transport)
+ *   Run following Move  ->  run off           (Move keeps playing; we go quiet)
+ *   a held chord        ->  nothing to do     (it stops when it is let go)
+ *
+ * Play is always Preview, because it is the only transport this module owns:
+ * a browser cannot press Move's play button (the shim claims the CC -- see the
+ * auto-record obituary in stacks.c).
+ */
+function isSounding(){ return !!(prog && prog.running); }
+/*
+ * ...AND PLAY PUTS BACK WHAT STOP TOOK AWAY.
+ *
+ * Stopping Move-driven playback means switching Run off, so the obvious Play
+ * -- start our own loop -- would leave Stacks free-running against a clip Move
+ * is still playing: audibly out of phase, and the user did not ask to change
+ * transports, only to stop and start. So a stop that switched Run off is
+ * remembered, and the next Play re-joins the transport instead.
+ *
+ * If Move stopped in the meantime that Play makes no sound, and the flag is
+ * spent, so pressing again starts our own loop. Degrading to "press twice"
+ * is the price of not putting a timer in a button; a Play that could dead-end
+ * would not be worth it.
+ */
+var stoppedRun = false;
+(function(){
+  var btn = document.getElementById("xport");
+  btn.onclick = function(){
+    if (isSounding()){
+      /*
+       * STOP MEANS STOP, INCLUDING A MOMENTARY THAT LATCHED.
+       *
+       * `play` is held down: on at the press, off at the release. Miss that
+       * release -- a pointer lost to a re-render, a page closed mid-press, a
+       * claimed CC whose release the shim withheld -- and the module holds the
+       * transport open forever, with the OLD stop button (preview off) unable
+       * to touch it, because preview is not what was making the sound. That
+       * is a module playing with nothing on either screen to stop it, and it
+       * is what "stop and play are not in harmony" actually was.
+       *
+       * A redundant play=off costs one write and is idempotent, so Stop always
+       * sends it before deciding which transport to switch off.
+       */
+      set("play", "off");
+      var prev = String(get("preview"));
+      if (prev === "loop" || prev === "chord"){ stoppedRun = false; set("preview", "off"); return; }
+      if (String(get("run")) === "on"){ stoppedRun = true; set("run", "off"); return; }
+      return;
+    }
+    if (stoppedRun){ stoppedRun = false; set("run", "on"); return; }
+    set("preview", "loop");
+  };
+})();
+var XP_PLAY = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" '
+  + 'aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>';
+var XP_STOP = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" '
+  + 'aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/></svg>';
+/*
+ * THE VERDICT BELONGS TO THE ACTION, NOT TO THE VALUE.
+ *
+ * `status` LATCHES -- it stays "ok" until the next job starts -- so keying the
+ * display on the value changing meant a second successful stamp displayed
+ * nothing at all: ok -> ok is not a change. The first attempt reported only
+ * transitions, which is precisely the case that does not need reporting.
+ *
+ * So the window opens when YOU press something and closes a few seconds after
+ * the module has answered. Two presses in a row each get their own report,
+ * whatever the value did in between.
+ */
+/*
+ * ARMED IS READ, NOT REMEMBERED.
+ *
+ * This panel used to own the armed state: a timestamp, set when IT pressed the
+ * rec-arm stamp, cleared when the progression started running or after a
+ * minute. Three things were wrong with that, and all three are the same
+ * mistake -- a fact about the MODULE kept by a surface:
+ *
+ *   * a stamp armed from the MOVE lit nothing here, and nothing there either,
+ *     which is a button that does nothing as far as anyone can tell;
+ *   * a transport STOP cancels the arm in the module, and this went on saying
+ *     ARMED, waiting for a downbeat that was never coming;
+ *   * the minute-long timeout was a guess about someone else's state.
+ *
+ * The module publishes it now, so this reads `status` like everything else and
+ * the two surfaces cannot disagree.
+ */
+function armedNow(){ return String(get("status")) === "armed"; }
+
+var jobAt = 0, jobDone = 0;
+var STAT_HOLD_MS = 3500, JOB_MAX_MS = 20000;
+function noteJobStarted(){ jobAt = Date.now(); jobDone = 0; }
+/*
+ * A REC-ARM TAKE ENDS ON ITS OWN, so its verdict is read from the TRANSITION
+ * working -> ok rather than from a press. That is the opposite of the rule
+ * below for the file write, and for the opposite reason: `status` latches at
+ * ok there, so a second stamp would show nothing; here armed and working are
+ * transient, so the transition is real and it is the only notice there is --
+ * the lap finishes while you are looking at the Move.
+ */
+var lastStat = "", takeDoneAt = 0;
+function paintStatus(){
+  var el = document.getElementById("stat");
+  if (!el) return;
+  var v = String(get("status") || "");
+  if (v !== lastStat){
+    if (lastStat === "working" && v === "ok" && !jobAt) takeDoneAt = Date.now();
+    lastStat = v;
+  }
+  if (armedNow()){
+    el.hidden = false;
+    el.className = "stat working";
+    /* It cannot press Move's Record itself, so the wording names the thing
+       the user has to do, and where. */
+    el.textContent = "ARMED \u00B7 REC ON MOVE";
+    return;
+  }
+  /*
+   * A rec-arm lap is the module's own doing and may have been started from the
+   * other surface, so it reports whether or not THIS panel pressed anything.
+   * The jobAt window below still guards the file-write path, where a verdict
+   * belongs to the press that asked for it.
+   */
+  if (v === "working" && !jobAt){
+    el.hidden = false;
+    el.className = "stat working";
+    el.textContent = "RECORDING";
+    return;
+  }
+  if (takeDoneAt){
+    if (Date.now() - takeDoneAt < STAT_HOLD_MS){
+      el.hidden = false;
+      el.className = "stat ok";
+      el.textContent = "TAKE RECORDED";
+      return;
+    }
+    takeDoneAt = 0;
+  }
+  if (!jobAt){ el.hidden = true; return; }
+  var now = Date.now();
+  if ((v === "ok" || v === "failed") && !jobDone) jobDone = now;
+  /* Give up rather than sit on WORKING forever if the module never answers. */
+  if (!jobDone && now - jobAt > JOB_MAX_MS){ jobAt = 0; el.hidden = true; return; }
+  if (jobDone && now - jobDone > STAT_HOLD_MS){ jobAt = 0; el.hidden = true; return; }
+  var shown = jobDone ? v : "working";
+  el.hidden = false;
+  el.className = "stat " + shown;
+  el.textContent = shown === "working" ? "WORKING"
+                 : shown === "ok"      ? "DONE"
+                 : "FAILED";
+}
+
+function paintTransport(){
+  var byp = document.getElementById("actBypass");
+  if (byp){
+    var on = get("bypassed") === "1";
+    byp.setAttribute("aria-pressed", String(on));
+    byp.setAttribute("aria-label", on ? "Stacks bypassed - tap to enable"
+                                      : "Bypass Stacks");
+  }
+  /* Delete is refused at one chord by the module; say so rather than no-op. */
+  var del = document.getElementById("actDel");
+  if (del) del.disabled = !prog || prog.count <= 1;
+  /* Lit when the MODULE is sounding, whatever started it -- see isSounding. */
+  var on = isSounding();
+  var btn = document.getElementById("xport");
+  btn.setAttribute("aria-pressed", String(on));
+  btn.setAttribute("aria-label", on ? "Stop the progression" : "Play the progression");
+  btn.innerHTML = on ? XP_STOP : XP_PLAY;
+}
+
+/* ═══════════════════════════════ boot ═════════════════════════ */
+buildTabs();
+if (R){
+  R.onParamChange(function(params){
+    var changed = false;
+    Object.keys(params).forEach(function(full){
+      var i = full.indexOf(":"), k = i < 0 ? full : full.slice(i+1);
+      /*
+       * rui_play -- "on:tick:bpm[:devms]" -- is the Tool tab's transport. The
+       * manager pushes it on every play-state EDGE and, while playing, a few
+       * times a second with the module's position; `state` (and so `prog`) is
+       * re-read only when the module's rev moves, which a running transport
+       * does not do. So the head is anchored from here, through the same
+       * reanchor() the prog string uses: a push names a RANGE, not a point.
+       */
+      if (k === "rui_play"){
+        var f = String(params[full]).split(":");
+        if (prog){
+          prog.running = f[0] === "1";
+          prog.posUnits = +f[1] || 0;
+          if (+f[2] > 0) prog.bpm = +f[2];
+          reanchor(prog);
+          changed = true;
+        }
+        return;
+      }
+      if (vals[k] !== params[full]){ vals[k] = params[full]; changed = true; }
+    });
+    if (changed) render();
+  });
+  /* A tool iframe is never answered here -- the Tool tab has no chain_params
+     to hand out -- so META comes from module.json below instead. */
+  if (!TOOL) R.getChainParams().then(function(list){
+    (list || []).forEach(function(m){ META[m.key] = m; });
+    render();
+  }).catch(function(){ render(); });
+} else {
+  /* No bridge: open in a real working state rather than an empty shell. */
+  META = {
+    scale:{name:"Scale",options:["Major","Minor","Dorian","Mixolydian","PentMin","Blues"]},
+    key:{name:"Key",options:NOTE}, defoct:{name:"Octave Default",type:"int",min:1,max:5},
+    steps:{name:"Chords",type:"int",min:1,max:16},
+    rate:{name:"New Chord Len",options:["2 bar","1 bar","1/2","1/4"]},
+    bars:{name:"Clip Bars",type:"int",min:1,max:16},
+    grouping:{name:"Voice Grouping",options:["none","dynamic","C2-B3","open 1","guitar","drop 2"]},
+    genre:{name:"Genre",options:["none","Pop","Rock","Jazz","Blues","Bossa"]},
+    progression:{name:"Progression",options:["none","Axis","Doo-wop","12-bar","ii-V-I"]},
+    common:{name:"Common Prog",options:["none","I-V-vi-IV","vi-IV-I-V","ii-V-I"]},
+    uncommon:{name:"Uncommon",options:["none","Backdoor","Phrygian","Borrowed IV"]},
+    colour:{name:"Colour",options:Object.keys(VOICE_SHAPE)},
+    degree:{name:"Scale Degree",access:"write",options:["I","II","III","IV","V","VI","VII","rest"]},
+    root:{name:"Root",options:["C3"]}, coct:{name:"Chord Oct",type:"int",min:1,max:5},
+    family:{name:"Shape Family",options:["5th","triad","6th","7th","9th","ext"]},
+    shape:{name:"Chord Shape",options:["maj","min","dim","aug","sus2","sus4","maj7","min7","dom7","m7b5","9","11","13"]},
+    inv:{name:"Inversion",type:"int",min:-3,max:3}, len:{name:"Length",type:"int",min:1,max:64},
+    off:{name:"Offset",type:"int",min:0,max:15}, cvel:{name:"Chord Vel",type:"int",min:-63,max:63},
+    ccolour:{name:"Colour",options:Object.keys(VOICE_SHAPE)},
+    cstrum:{name:"Strum",type:"int",min:0,max:100}, cgate:{name:"Chord Gate",type:"int",min:-50,max:50},
+    cmute:{name:"Mute",options:["off","on"]}, rhythm:{name:"Rhythm",options:Object.keys(RHY)},
+    ctrans:{name:"Transpose",type:"int",min:-12,max:12},
+    octave:{name:"Clip Octave",type:"int",min:-2,max:2},
+    transpose:{name:"Clip Transpose",type:"int",min:-12,max:12}, velocity:{name:"Velocity",type:"int",min:1,max:127},
+    gate:{name:"Gate",type:"int",min:5,max:100}, swing:{name:"Swing",type:"int",min:0,max:75},
+    hum_vel:{name:"Human Vel",type:"int",min:0,max:100},
+    hum_time:{name:"Human Time",type:"int",min:0,max:100},
+    roll_vel:{name:"Randomize Vel",access:"write",options:["off","on"]},
+    roll_time:{name:"Randomize Time",access:"write",options:["off","on"]},
+    read:{name:"Read Clip",access:"write",options:["off","on"]},
+    read_mode:{name:"Read Mode",options:["replace","append"]},
+    stamp:{name:"Stamp Clip",access:"write",options:["off","on"]},
+    clear:{name:"Clear",access:"write",options:["off","on"]},
+    lanes:{name:"Note Lanes",options:["scale","diatonic"]},
+    preview:{name:"Preview",options:["off","chord","loop"]},
+    run:{name:"Run",options:["off","on"]},
+    duplicate:{name:"Duplicate",access:"write",options:["off","on"]},
+    stretch:{name:"Halftime",access:"write",options:["off","on"]},
+    compress:{name:"Double-time",access:"write",options:["off","on"]},
+    undo:{name:"Undo",access:"write",options:["off","on"]}
+  };
+  vals.scale = "Minor"; vals.root = "G3"; vals.rhythm = "son 3-2";
+  vals.ccolour = "drop2"; vals.len = "16"; vals.swing = "0"; vals.cgate = "0";
+  render();
+}
+})();
+</script>
+</body>
+</html>

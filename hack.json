@@ -1,0 +1,11 @@
+{
+  "id": "stacks",
+  "name": "Stacks",
+  "version": "0.1.0",
+  "description": "Chord-progression tool, ported from the Schwung module for Ableton Move. Plays chords into Live on the selected track and follows Live's MIDI clock.",
+  "author": "rgeissen",
+  "binary": "stacks",
+  "port": 7711,
+  "enabled": true,
+  "web_ui": { "label": "Stacks", "path": "/" }
+}
