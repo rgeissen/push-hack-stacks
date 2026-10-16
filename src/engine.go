@@ -26,6 +26,13 @@ const (
 	// of blocks back to back fires every due note in one burst.
 	maxCatchUp = 50 * time.Millisecond
 	playPush   = 250 * time.Millisecond // rui_play cadence while running
+
+	// A transport Live started but stopped clocking is released after
+	// this: a Start with no clock (Live's audio engine not running), or a
+	// clock that dies without a Stop (Live quit, a USB reset), otherwise
+	// leaves Stacks waiting on a downbeat that never comes -- stuck on its
+	// first chord. 1.5 s is longer than one clock at any tempo Live runs.
+	clockTimeout = 1500 * time.Millisecond
 )
 
 type midiIn struct {
@@ -48,6 +55,9 @@ type Engine struct {
 	lastRev  string
 	lastPlay string
 	lastPush time.Time
+
+	xport     bool      // Live's transport, as its Start/Stop said
+	lastPulse time.Time // the last clock, or the Start when none yet
 
 	stats timing
 }
@@ -93,7 +103,16 @@ func (e *Engine) Run(ctx context.Context, moduleDir, config string, out *notesOu
 		case <-ctx.Done():
 			return nil
 		case m := <-e.midi:
+			e.stats.heard(m.msg)
 			e.tempo.feed(m)
+			switch m.msg[0] {
+			case 0xFA, 0xFB:
+				e.xport, e.lastPulse = true, m.at
+			case 0xFC:
+				e.xport = false
+			case 0xF8:
+				e.lastPulse = m.at
+			}
 			inst.OnMIDI(m.msg, dsp.SourceExternal)
 		case f := <-e.calls:
 			f(inst)
@@ -107,6 +126,11 @@ func (e *Engine) Run(ctx context.Context, moduleDir, config string, out *notesOu
 			for !next.After(now) {
 				inst.Render()
 				next = next.Add(blockDur)
+			}
+			if e.xport && now.Sub(e.lastPulse) > clockTimeout {
+				log.Printf("transport: no clock from Live for %v, releasing", clockTimeout)
+				e.xport = false
+				inst.OnMIDI([]byte{0xFC}, dsp.SourceExternal)
 			}
 			if !now.Before(nextPoll) {
 				e.poll(inst, now)
@@ -190,6 +214,34 @@ type timing struct {
 	n, skipped int
 	sum, max   time.Duration
 	nextLog    time.Time
+	in         map[string]int // MIDI heard on Stacks In, by kind
+}
+
+// heard counts what Live sent, so "the transport does nothing" can be told
+// apart from "Live sends nothing" by reading the log.
+func (t *timing) heard(msg []byte) {
+	if t.in == nil {
+		t.in = map[string]int{}
+	}
+	var kind string
+	switch {
+	case msg[0] == 0xF8:
+		kind = "clock"
+	case msg[0] == 0xFA:
+		kind = "start"
+	case msg[0] == 0xFB:
+		kind = "continue"
+	case msg[0] == 0xFC:
+		kind = "stop"
+	case msg[0]&0xF0 == 0x90 || msg[0]&0xF0 == 0x80:
+		kind = "note"
+	default:
+		kind = "other"
+	}
+	t.in[kind]++
+	if kind == "start" || kind == "stop" || kind == "continue" {
+		log.Printf("transport: %s on Stacks In", kind) // rare: say it now
+	}
 }
 
 func (t *timing) wake(late time.Duration) {
@@ -211,6 +263,9 @@ func (t *timing) maybeLog(now time.Time) {
 		log.Printf("timing: %d wakes, late avg %v max %v, skipped %d",
 			t.n, (t.sum / time.Duration(t.n)).Round(time.Microsecond),
 			t.max.Round(time.Microsecond), t.skipped)
+	}
+	if len(t.in) > 0 {
+		log.Printf("midi in: %v", t.in)
 	}
 	*t = timing{nextLog: now.Add(time.Minute)}
 }
