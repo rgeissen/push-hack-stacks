@@ -1,0 +1,131 @@
+package surface
+
+import (
+	"reflect"
+	"testing"
+)
+
+// Captured from the device (Stacks on Push, 2026-10-16): Axis, chord 2
+// selected, in A with the scale left at Minor.
+const axisProg = "v13|4|2|-1|8|5ad|9|32|0|4|120|0|0|" +
+	"A,A3,0,8,0,100,0,1,57:100.61:100.64:100;E,E4,0,8,0,100,0,1,64:100.68:100.71:100;" +
+	"F#m,F#4,0,8,0,100,0,1,66:100.69:100.73:100;D,D4,0,8,0,100,0,1,62:100.66:100.69:100"
+
+func TestParseProgDevice(t *testing.T) {
+	p, ok := ParseProg(axisProg)
+	if !ok {
+		t.Fatal("did not parse")
+	}
+	if p.Sel != 2 || p.Playing != -1 || p.Key != 9 || p.ClipUnits != 32 || len(p.Chords) != 4 {
+		t.Fatalf("header: %+v", p)
+	}
+	c := p.Chords[2]
+	if c.Name != "F#m" || c.Root != "F#4" || c.Len != 8 || !reflect.DeepEqual(c.Notes, []int{66, 69, 73}) {
+		t.Errorf("chord 3: %+v", c)
+	}
+	if p.MusicUnits() != 32 || !reflect.DeepEqual(p.Starts(), []int{0, 8, 16, 24}) {
+		t.Errorf("timing: %d %v", p.MusicUnits(), p.Starts())
+	}
+}
+
+func TestParseProgRejects(t *testing.T) {
+	for _, s := range []string{"", "v11|4", "garbage", "v13|1|2"} {
+		if _, ok := ParseProg(s); ok {
+			t.Errorf("%q parsed", s)
+		}
+	}
+	// A rest carries no notes, not a note at pitch 0.
+	p, _ := ParseProg("v13|1|1|-1|8|5ad|9|8|0|4|120|0|0|REST,A4,0,8,0,100,0,1,")
+	if !p.Chords[0].Rest() {
+		t.Error("an empty note list must be a rest")
+	}
+}
+
+func TestDisplayName(t *testing.T) {
+	cases := map[string]string{
+		"A": "A", "F#m": "F#MIN", "C#m7": "C#MIN7", "Amaj7": "AMAJ7", "Am9": "AMIN9",
+		"Bm7b5": "BMIN7-5", "G7b9": "G7-9", "G7#9": "G7+9", "CmMaj7": "CMINMAJ7",
+		"Dsus4": "DSUS4", "Edim7": "EDIM7", "Bbmaj7": "BBMAJ7", "Fmaj7#5": "FMAJ7+5",
+		"Cadd9": "CADD9", "Cmadd9": "CMINADD9", "": "",
+	}
+	for in, want := range cases {
+		if got := DisplayName(in); got != want {
+			t.Errorf("DisplayName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestFunctionAndDegree(t *testing.T) {
+	p, _ := ParseProg(axisProg) // A minor: A B C D E F G
+	want := []struct {
+		f     Function
+		roman string
+		acc   int
+	}{
+		{FuncTonic, "I", 0},        // A
+		{FuncDominant, "V", 0},     // E
+		{FuncOutside, "VI", 0},     // F# is not in A minor; against the major reference it is VI
+		{FuncPredominant, "IV", 0}, // D
+	}
+	for i, c := range p.Chords {
+		f := FunctionOf(c, p.Key, p.ScaleMask)
+		r, acc := Degree(c, p.Key, p.ScaleMask)
+		if f != want[i].f || r != want[i].roman {
+			t.Errorf("chord %d %s: function %v roman %s%+d, want %v %s", i+1, c.Name, f, r, acc, want[i].f, want[i].roman)
+		}
+	}
+	// In A minor, C is III (the scale's own third), not bIII.
+	if r, acc := Degree(Chord{Root: "C4", Notes: []int{60}}, 9, 0x5ad); r != "III" || acc != 0 {
+		t.Errorf("C in A minor = %s%+d, want III", r, acc)
+	}
+	// Chromatic: Bb in A minor is bII against the major reference.
+	if r, acc := Degree(Chord{Root: "A#3", Notes: []int{58}}, 9, 0x5ad); r != "II" || acc != -1 {
+		t.Errorf("A# in A minor = %s%+d, want bII", r, acc)
+	}
+}
+
+func TestHitsTileTheBar(t *testing.T) {
+	hold := Chord{Len: 16, Mask: 1}
+	if got := Hits(hold, 0, 8); !reflect.DeepEqual(got, []float64{0}) {
+		t.Errorf("hold over two bars = %v, want one strike", got)
+	}
+	// Quarter notes (sixteenths 0,4,8,12) over two bars: 8 hits, 2 units apart.
+	q := Chord{Len: 16, Mask: 0x1111}
+	if got := Hits(q, 0, 8); len(got) != 8 || got[1] != 2 {
+		t.Errorf("quarters = %v", got)
+	}
+	// A chord starting on beat 3 shows the second half of its bar's figure.
+	if got := Hits(Chord{Len: 4, Mask: 0x1111}, 4, 8); !reflect.DeepEqual(got, []float64{0, 2}) {
+		t.Errorf("phased quarters = %v, want [0 2]", got)
+	}
+}
+
+func TestSpansFillTheWidth(t *testing.T) {
+	mk := func(lens ...int) Prog {
+		var p Prog
+		for _, l := range lens {
+			p.Chords = append(p.Chords, Chord{Len: l})
+		}
+		return p
+	}
+	// Four equal chords: a quarter each, edge to edge.
+	if got := Spans(mk(8, 8, 8, 8)); !reflect.DeepEqual(got, []int{0, 240, 480, 720, 960}) {
+		t.Errorf("4 equal = %v", got)
+	}
+	// Lengths stay proportional: 16 then 8 is two thirds and one third.
+	if got := Spans(mk(16, 8)); got[1] != 640 || got[2] != 960 {
+		t.Errorf("2:1 = %v", got)
+	}
+	// A short chord among long ones is held at the floor, not crushed.
+	got := Spans(mk(64, 2, 64))
+	if w := got[2] - got[1]; w < minChordW {
+		t.Errorf("short chord %dpx, want >= %d (%v)", w, minChordW, got)
+	}
+	if got[3] != W {
+		t.Errorf("does not reach the edge: %v", got)
+	}
+	// Sixteen chords: a sixteenth each.
+	if got := Spans(mk(8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8)); got[1] != 60 || got[16] != W {
+		t.Errorf("16 equal = %v", got[:3])
+	}
+}
