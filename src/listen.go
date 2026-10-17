@@ -45,7 +45,10 @@ type listenState struct {
 	root, bass int
 	inv        int
 	known      bool
+	interval   string
+	omit       []int
 	keysLo     int
+	unnamed    map[string]bool // sets nothing fits, logged once each
 }
 
 func newListenState() *listenState {
@@ -119,35 +122,74 @@ func (l *listenState) scene(eng *Engine, now time.Time, key, mask int) surface.L
 	notes, held, source, status := l.snapshot(now)
 	if held != l.named {
 		l.named = held
-		name, root, bass, inv, known := "", -1, -1, 0, false
+		var c chordOf
 		if held != "" {
 			var reply string
 			eng.Call(func(i *dsp.Instance) { reply, _ = i.GetParam("chord_of:" + held) }, 200*time.Millisecond)
-			name, root, bass, inv, known = parseChordOf(reply)
+			c = parseChordOf(reply)
+			if c.kind == 2 { // two notes: say them, and the interval between
+				ns := strings.Split(held, ".")
+				lo, _ := strconv.Atoi(ns[0])
+				hi, _ := strconv.Atoi(ns[len(ns)-1])
+				c.name = surface.NoteName(lo) + "-" + surface.NoteName(hi)
+				c.interval = surface.IntervalWords[((hi-lo)%12+12)%12]
+			}
+			if c.kind == 0 && !l.unnamed[held] {
+				if l.unnamed == nil {
+					l.unnamed = map[string]bool{}
+				}
+				l.unnamed[held] = true
+				log.Printf("listen: no chord fits %s (notes, bass first)", held)
+			}
 		}
-		if name != l.name || inv != l.inv || bass != l.bass {
-			if name != "" || len(notes) == 0 { // keep the name while the last notes fade
-				l.prev, l.name, l.nameAt = surface.BoardText(l.name, l.inv, l.bass, l.known), name, now
-				l.root, l.bass, l.inv, l.known = root, bass, inv, known
+		if c.name != l.name || c.inv != l.inv || c.bass != l.bass || c.interval != l.interval {
+			if c.name != "" || len(notes) == 0 { // keep the name while the last notes fade
+				prev := surface.BoardText(l.name, l.root, l.bass, l.known)
+				if l.interval != "" {
+					prev = l.name
+				}
+				l.prev, l.name, l.nameAt = prev, c.name, now
+				l.root, l.bass, l.inv, l.known = c.root, c.bass, c.inv, c.kind == 1
+				l.interval, l.omit = c.interval, c.omit
 			}
 		}
 	}
 	l.keysLo = surface.KeyWindow(l.keysLo, notes)
 	return surface.ListenScene{Now: now, Notes: notes, Name: l.name, PrevName: l.prev, NameAt: l.nameAt,
-		Root: l.root, Bass: l.bass, Inv: l.inv, Known: l.known, Key: key, Mask: mask,
-		KeysLo: l.keysLo, Source: source, Status: status}
+		Root: l.root, Bass: l.bass, Inv: l.inv, Known: l.known, Interval: l.interval, Omit: l.omit,
+		Key: key, Mask: mask, KeysLo: l.keysLo, Source: source, Status: status}
 }
 
-// parseChordOf reads the core's NAME|ROOT|INV|BASS|KNOWN.
-func parseChordOf(s string) (name string, root, bass, inv int, known bool) {
+// chordOf is the core's answer for a set of notes (chord_of).
+type chordOf struct {
+	name       string
+	root, bass int
+	inv        int // -1: a bass outside the chord
+	kind       int // 1 a chord, 2 an interval, 0 nothing fits
+	omit       []int
+	interval   string // set by the caller for an interval
+}
+
+// parseChordOf reads NAME|ROOT|INV|BASS|KNOWN|OMIT (an older core sends
+// the first five).
+func parseChordOf(s string) chordOf {
 	f := strings.Split(s, "|")
 	if len(f) < 5 {
-		return "", -1, -1, 0, false
+		return chordOf{root: -1, bass: -1}
 	}
-	root, _ = strconv.Atoi(f[1])
-	inv, _ = strconv.Atoi(f[2])
-	bass, _ = strconv.Atoi(f[3])
-	return f[0], root, bass, inv, f[4] == "1"
+	c := chordOf{name: f[0]}
+	c.root, _ = strconv.Atoi(f[1])
+	c.inv, _ = strconv.Atoi(f[2])
+	c.bass, _ = strconv.Atoi(f[3])
+	c.kind, _ = strconv.Atoi(f[4])
+	if len(f) > 5 && f[5] != "-" {
+		for _, o := range strings.Split(f[5], ".") {
+			if v, err := strconv.Atoi(o); err == nil {
+				c.omit = append(c.omit, v)
+			}
+		}
+	}
+	return c
 }
 
 // listenTrack keeps Browser Bridge's listen track on while listening, and

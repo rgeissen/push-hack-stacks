@@ -35,15 +35,21 @@ func TestListenStateTracksNotes(t *testing.T) {
 }
 
 func TestParseChordOf(t *testing.T) {
-	name, root, bass, inv, known := parseChordOf("Cmaj7|0|0|0|1")
-	if name != "Cmaj7" || root != 0 || bass != 0 || inv != 0 || !known {
-		t.Errorf("Cmaj7: %q %d %d %d %v", name, root, bass, inv, known)
+	c := parseChordOf("Cmaj7|0|0|0|1|7")
+	if c.name != "Cmaj7" || c.root != 0 || c.kind != 1 || len(c.omit) != 1 || c.omit[0] != 7 {
+		t.Errorf("Cmaj7 no 5th: %+v", c)
 	}
-	if name, _, bass, inv, _ := parseChordOf("C|0|1|4|1"); name != "C" || bass != 4 || inv != 1 {
-		t.Errorf("C/E: %q bass %d inv %d", name, bass, inv)
+	if c := parseChordOf("C|0|-1|6|1|-"); c.inv != -1 || c.bass != 6 || c.omit != nil {
+		t.Errorf("C/F#: %+v", c)
 	}
-	if name, root, _, _, _ := parseChordOf(""); name != "" || root != -1 {
-		t.Errorf("empty: %q %d", name, root)
+	if c := parseChordOf("|0|0|0|2|-"); c.kind != 2 || c.name != "" {
+		t.Errorf("an interval: %+v", c)
+	}
+	if c := parseChordOf("C|0|1|4|1"); c.name != "C" || c.inv != 1 { // an older core: five fields
+		t.Errorf("five fields: %+v", c)
+	}
+	if c := parseChordOf(""); c.name != "" || c.root != -1 {
+		t.Errorf("empty: %+v", c)
 	}
 }
 
@@ -60,9 +66,9 @@ func TestCoreNamesAPlayedChord(t *testing.T) {
 	defer in.Destroy()
 	for held, want := range map[string]string{"60.64.67": "C", "60.64.67.71": "Cmaj7", "52.55.60": "C", "57.60.64.67": "Am7"} {
 		reply, ok := in.GetParam("chord_of:" + held)
-		name, _, _, _, known := parseChordOf(reply)
-		if !ok || name != want || !known {
-			t.Errorf("%s: %q (%q), want %s", held, name, reply, want)
+		c := parseChordOf(reply)
+		if !ok || c.name != want || c.kind != 1 {
+			t.Errorf("%s: %q (%q), want %s", held, c.name, reply, want)
 		}
 	}
 }

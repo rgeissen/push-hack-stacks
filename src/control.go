@@ -74,6 +74,14 @@ func newSurface(eng *Engine, scr *screen, man *surface.Manifest) *surfaceCtl {
 	s := &surfaceCtl{eng: eng, scr: scr, man: man, pm: pm, deps: newDeps(pm),
 		padAt: map[uint8]time.Time{}}
 	scr.pads = s.paint
+	scr.retake = func() {
+		if s.mode() == modeEdit {
+			if err := s.pm.SetMidiFilterPass(true, passToLive); err != nil {
+				log.Printf("surface: intercept again: %v", err)
+			}
+			s.scr.Update(func(*look) {}) // and every LED with it
+		}
+	}
 	return s
 }
 

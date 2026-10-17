@@ -34,18 +34,19 @@ func TestKeyWindowMovesByOctavesOnly(t *testing.T) {
 
 func TestBoardText(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		inv, bass int
-		known     bool
-		want      string
+		name       string
+		root, bass int
+		known      bool
+		want       string
 	}{
 		{"Cmaj7", 0, 0, true, DisplayName("Cmaj7")},
-		{"C", 1, 4, true, "C/E"},
+		{"C", 0, 4, true, "C/E"},  // an inversion: root C, bass E
+		{"C", 0, 6, true, "C/F#"}, // a bass outside the chord
 		{"C", 0, 0, false, "?"},
 		{"", 0, 0, true, ""},
 	} {
-		if got := BoardText(tc.name, tc.inv, tc.bass, tc.known); got != tc.want {
-			t.Errorf("%q inv %d: %q, want %q", tc.name, tc.inv, got, tc.want)
+		if got := BoardText(tc.name, tc.root, tc.bass, tc.known); got != tc.want {
+			t.Errorf("%q bass %d: %q, want %q", tc.name, tc.bass, got, tc.want)
 		}
 	}
 }
@@ -78,5 +79,17 @@ func TestRenderListenSaysWhenItMoves(t *testing.T) {
 	// Idle, with and without a problem to say: no panic, no motion.
 	if RenderListen(img, ListenScene{Now: t0, Root: -1, Bass: -1, KeysLo: 48, Status: "ACTIVATE BROWSER BRIDGE"}) {
 		t.Error("idle moves")
+	}
+}
+
+func TestToneNameFollowsTheChord(t *testing.T) {
+	for _, tc := range []struct {
+		chord string
+		semis int
+		want  string
+	}{{"C13", 9, "13"}, {"C6", 9, "6"}, {"C7b13", 8, "b13"}, {"Caug", 8, "#5"}, {"Cm7", 10, "b7"}, {"C9", 2, "9"}} {
+		if got := toneName(tc.chord, tc.semis); got != tc.want {
+			t.Errorf("%s, %d semitones: %q, want %q", tc.chord, tc.semis, got, tc.want)
+		}
 	}
 }

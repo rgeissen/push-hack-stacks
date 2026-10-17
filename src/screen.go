@@ -70,6 +70,7 @@ type screen struct {
 	follows   func() bool       // Key and Scale follow Push's; nil before main sets it
 	listen    *listenState      // what is played, in listen mode; nil before main sets it
 	listening bool              // listen mode: draw the played chord, not the editor
+	retake    func()            // re-takes what the mode holds besides the display; set by the surface
 	synced    bool              // Live is connected to Stacks In
 	stats     struct {
 		sent      int
@@ -207,11 +208,17 @@ func (s *screen) check() {
 		return
 	}
 	if st, err := s.pm.DisplayStatus(); err == nil && st.Connected && st.Mode != 2 {
-		log.Printf("screen: display was reset to mode %d (Push3 restart?), taking it again", st.Mode)
-		if s.pm.SetMode(2) == nil {
-			s.mu.Lock()
-			s.last = 0
-			s.mu.Unlock()
+		log.Printf("screen: display was reset to mode %d (Push3 or push-manager restart?), taking it again", st.Mode)
+		if err := s.pm.SetMode(2); err != nil {
+			log.Printf("screen: %v", err) // "Push is shutting down": Push3 keeps it
+			return
+		}
+		s.mu.Lock()
+		s.last = 0
+		retake := s.retake
+		s.mu.Unlock()
+		if retake != nil {
+			retake() // the intercept went with the display: take both, or the pads go to Live under the editor
 		}
 	}
 }

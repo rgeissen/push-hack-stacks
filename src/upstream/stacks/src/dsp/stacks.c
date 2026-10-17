@@ -1364,6 +1364,131 @@ static void name_chord(const int *notes, int n, int *out_root, int *out_shape, i
     *out_inv = best_inv;
 }
 
+/*
+ * NAME A PLAYED CHORD -- the listen mode's question, not the clip reader's.
+ *
+ * name_chord above takes a pitch-class set only as one of SHAPES[], note
+ * for note, and that is right for READING: whatever it names becomes a
+ * shape Stacks plays back, and must not gain a note the clip did not have.
+ * A hand on a keyboard plays fewer notes than the textbook, though: the 5th
+ * left out of a seventh chord, the 9th and 11th out of a 13th, a bass that
+ * is not in the chord (D/C, F/G), and shapes Stacks does not write (add11,
+ * 7#11, 9sus4). Asked on Push: "we are not covering all chords".
+ *
+ * So: every root that sounds, every template (SHAPES[] and the played-only
+ * ones below), a chord that has all of a template's REQUIRED notes and no
+ * note outside it -- the 5th optional from four notes up, the 9th and 11th
+ * optional in 11th and 13th chords -- and failing that the same with the
+ * bass set aside as a slash. Best wins: exact, then fewer notes left out,
+ * then no slash, then the bass on the root, then the simpler template. So C
+ * E G A is C6 (not Am7/C), and A C E G is Am7.
+ */
+typedef struct {
+    const char *suffix;
+    int n;
+    int iv[7];
+} played_shape_t;
+
+static const played_shape_t PLAYED_EXTRA[] = {
+    { "add11",   4, { 0, 4, 7, 17 } },
+    { "madd11",  4, { 0, 3, 7, 17 } },
+    { "7#11",    5, { 0, 4, 7, 10, 18 } },
+    { "maj7#11", 5, { 0, 4, 7, 11, 18 } },
+    { "9sus4",   5, { 0, 5, 7, 10, 14 } },
+    { "7b13",    5, { 0, 4, 7, 10, 20 } },
+    { "mMaj9",   5, { 0, 3, 7, 11, 14 } },
+    { "m6/9",    5, { 0, 3, 7, 9, 14 } },
+    { "13sus4",  6, { 0, 5, 7, 10, 14, 21 } },
+};
+#define NUM_PLAYED_EXTRA ((int)(sizeof(PLAYED_EXTRA) / sizeof(PLAYED_EXTRA[0])))
+
+/* Template t: SHAPES[] first (from the triads on), then PLAYED_EXTRA. */
+static int played_template(int t, const char **suffix, const int **iv, int *n) {
+    int first = SHAPE_SINGLE + 1;                 /* skip rest and note */
+    if (t < NUM_SHAPES - first) {
+        const stk_shape_t *sh = &SHAPES[first + t];
+        if (sh->iv[sh->n - 1] == 12) return 0;    /* "oct": not a chord */
+        *suffix = sh->suffix; *iv = sh->iv; *n = sh->n;
+        return 1;
+    }
+    t -= NUM_SHAPES - first;
+    if (t >= NUM_PLAYED_EXTRA) return -1;
+    *suffix = PLAYED_EXTRA[t].suffix; *iv = PLAYED_EXTRA[t].iv; *n = PLAYED_EXTRA[t].n;
+    return 1;
+}
+
+/*
+ * out_known: 1 a chord, 2 two notes (an interval: the name is empty and the
+ * caller says the interval), 0 nothing fits. out_inv: the bass's place in
+ * the chord, -1 for a bass outside it. out_omit: the template's notes left
+ * out, as semitones above the root (bit n).
+ */
+static void name_played(const int *notes, int n, int *out_root_pc, const char **out_suffix,
+                        int *out_inv, int *out_known, uint16_t *out_omit) {
+    int bass_pc = ((notes[0] % 12) + 12) % 12;
+    uint16_t want = pc_mask(notes, n);
+    int want_n = popcount16(want);
+    *out_root_pc = bass_pc; *out_suffix = ""; *out_inv = 0; *out_known = 0; *out_omit = 0;
+    if (want_n == 1) { *out_known = 1; return; }
+    if (want_n == 2) {
+        int other = 0;
+        for (int i = 0; i < 12; i++) if ((want & (1u << i)) && i != bass_pc) other = i;
+        if ((other - bass_pc + 12) % 12 == 7) { *out_suffix = "5"; *out_known = 1; return; }
+        *out_known = 2;
+        return;
+    }
+
+    int best = -1000000;
+    for (int slash = 0; slash < 2; slash++) {
+        uint16_t chord = slash ? (uint16_t)(want & ~(1u << bass_pc)) : want;
+        if (slash && popcount16(chord) < 3) break;
+        for (int rpc = 0; rpc < 12; rpc++) {
+            if (!(chord & (1u << rpc))) continue;           /* the root sounds */
+            for (int t = 0; ; t++) {
+                const char *suf; const int *iv; int tn;
+                int ok = played_template(t, &suf, &iv, &tn);
+                if (ok < 0) break;
+                if (!ok) continue;
+                uint16_t full = 0, optional = 0;
+                int ext = 0;
+                for (int k = 0; k < tn; k++) {
+                    int pc = (rpc + iv[k]) % 12;
+                    full |= (uint16_t)(1u << pc);
+                    if (iv[k] >= 17) ext = 1;
+                }
+                for (int k = 0; k < tn; k++) {
+                    int pc = (rpc + iv[k]) % 12;
+                    if (tn >= 4 && iv[k] == 7) optional |= (uint16_t)(1u << pc);
+                    if (ext && (iv[k] == 14 || iv[k] == 17)) optional |= (uint16_t)(1u << pc);
+                }
+                uint16_t required = full & ~optional;
+                if ((chord & ~full) || (required & ~chord)) continue;
+                if (slash && (full & (1u << bass_pc))) continue; /* then it is no slash */
+                uint16_t omit = full & ~chord;
+                int score = 1000 - 100 * popcount16(omit) - (slash ? 300 : 0)
+                          + ((!slash && rpc == bass_pc) ? 50 : 0) - tn - t / 64;
+                if (score > best) {
+                    best = score;
+                    *out_root_pc = rpc; *out_suffix = suf; *out_known = 1;
+                    *out_omit = 0;
+                    for (int k = 0; k < tn; k++)
+                        if (omit & (1u << ((rpc + iv[k]) % 12))) *out_omit |= (uint16_t)(1u << (iv[k] % 12));
+                    if (slash) *out_inv = -1;
+                    else {
+                        *out_inv = 0;
+                        int order[7], m = 0;              /* chord tones present, by interval */
+                        for (int k = 0; k < tn; k++)
+                            if (chord & (1u << ((rpc + iv[k]) % 12))) order[m++] = iv[k] % 12;
+                        for (int k = 0; k < m; k++)
+                            if ((rpc + order[k]) % 12 == bass_pc) { *out_inv = k; break; }
+                    }
+                }
+            }
+        }
+        if (best > -1000000) break;                      /* no slash when a chord fits */
+    }
+}
+
 /* ======================================================================
  * Building the sounding notes of one chord
  * ====================================================================== */
@@ -4748,11 +4873,13 @@ static int stk_get_param(void *instance, const char *key, char *buf, int buf_len
         /*
          * NAME A CHORD SOMEONE ELSE IS PLAYING, the way `prog` names ours:
          * the key carries the MIDI notes ("chord_of:52.60.64.67", any order,
-         * up to 16), the answer is NAME|ROOT|INV|BASS|KNOWN -- the name as the
-         * staff spells it (sounding root + the shape's suffix), the root and
-         * bass as pitch classes, the inversion as name_chord counts it, and
-         * KNOWN 0 when no shape has exactly these pitch classes (the name is
-         * then the bass note alone). Asked for on Push, where a listen mode
+         * up to 16), the answer is NAME|ROOT|INV|BASS|KNOWN|OMIT -- the name
+         * as the staff spells it (root + the shape's suffix), the root and
+         * bass as pitch classes, the bass's place in the chord (-1: a bass
+         * outside it, a slash chord), KNOWN 1 a chord, 2 two notes (an
+         * interval, no name), 0 nothing fits, and OMIT the chord's notes left
+         * out as semitones above the root ("7" = no 5th, "-" none). Named by
+         * name_played, which takes a played chord as a hand plays it. Asked for on Push, where a listen mode
          * names the chord played on Live's pads; one naming for both, so the
          * listen screen can never disagree with the staff.
          */
@@ -4769,12 +4896,17 @@ static int stk_get_param(void *instance, const char *key, char *buf, int buf_len
                 int t = notes[j]; notes[j] = notes[j - 1]; notes[j - 1] = t;
             }
         if (n == 0) return snprintf(buf, buf_len, "");
-        int root, shape, inv;
-        name_chord(notes, n, &root, &shape, &inv);
-        int rpc = ((root % 12) + 12) % 12, bpc = ((notes[0] % 12) + 12) % 12;
-        int known = shape != SHAPE_SINGLE || popcount16(pc_mask(notes, n)) == 1;
-        return snprintf(buf, buf_len, "%s%s|%d|%d|%d|%d", NOTE_NAMES[rpc],
-                        known ? SHAPES[shape].suffix : "", rpc, inv, bpc, known);
+        int rpc, inv, known;
+        const char *suffix;
+        uint16_t omit;
+        name_played(notes, n, &rpc, &suffix, &inv, &known, &omit);
+        int bpc = ((notes[0] % 12) + 12) % 12;
+        char om[48] = "-";
+        for (int i = 0, at = 0; i < 12; i++)
+            if (omit & (1u << i)) at += snprintf(om + at, sizeof om - at, "%s%d", at ? "." : "", i);
+        return snprintf(buf, buf_len, "%s%s|%d|%d|%d|%d|%s",
+                        known == 2 ? "" : NOTE_NAMES[rpc], known == 1 ? suffix : "",
+                        rpc, inv, bpc, known, om);
     }
     if (strcmp(key, "pat_names") == 0) {
         /*

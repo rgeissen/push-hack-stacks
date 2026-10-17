@@ -13,4 +13,4 @@ require (
 // tagged: core with pass-through buttons, raw frames and
 // MidiFilterStatus, from that PR's branch on the fork. Replace with the
 // new core/vX.Y.Z tag and delete this (framework rule: a tag, no replace).
-replace github.com/federico-pepe/ableton-push-hack/core => github.com/rgeissen/ableton-push-hack/core v0.0.0-20261017144028-e265f138356d
+replace github.com/federico-pepe/ableton-push-hack/core => github.com/rgeissen/ableton-push-hack/core v0.0.0-20261017150506-1a645d833cdb

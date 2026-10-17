@@ -59,7 +59,9 @@ type ListenScene struct {
 	Root     int          // pitch class, -1 none
 	Bass     int          // pitch class
 	Inv      int
-	Known    bool   // a shape has exactly these pitch classes
+	Known    bool   // a chord is named
+	Interval string // two notes: the interval ("MAJOR 3RD"); Name is then the two notes
+	Omit     []int  // the chord's notes left out, in semitones above the root
 	Key      int    // 0 = C
 	Mask     int    // the scale's pitch classes, relative to Key
 	KeysLo   int    // the keyboard's lowest note, a C; from KeyWindow
@@ -103,7 +105,7 @@ func RenderListen(img *image.NRGBA, s ListenScene) (moving bool) {
 
 	held := heldNotes(s.Notes)
 	hue := Ink
-	if len(held) > 0 && s.Known && s.Root >= 0 {
+	if len(held) > 0 && s.Known && s.Interval == "" && s.Root >= 0 {
 		full, _ := FuncHue(listenFunc(s))
 		hue = full
 	}
@@ -164,11 +166,13 @@ func drawListenHead(img *image.NRGBA, s ListenScene) {
 // the new character shows as the old top falls, then the new bottom falls
 // over the old bottom -- a split-flap board, read at a glance.
 func drawFlaps(img *image.NRGBA, s ListenScene, hue color.NRGBA) (moving bool) {
-	name, prev := BoardText(s.Name, s.Inv, s.Bass, s.Known), s.PrevName
+	name, prev := BoardText(s.Name, s.Root, s.Bass, s.Known), s.PrevName
 	switch {
 	case s.Name == "":
 		name = "-"
-	case !s.Known: // no shape has these notes: the bass alone would read as a chord
+	case s.Interval != "":
+		name = s.Name // the two notes, as they are
+	case !s.Known: // nothing fits: the bass alone would read as a chord
 		name = "?"
 	}
 	n := max(len(name), len(prev), 1)
@@ -215,8 +219,9 @@ func drawFlaps(img *image.NRGBA, s ListenScene, hue color.NRGBA) (moving bool) {
 }
 
 // BoardText is a chord's name as the flap board spells it: Stacks' display
-// spelling, and the bass after a slash when it is not the root.
-func BoardText(name string, inv, bass int, known bool) string {
+// spelling, and the bass after a slash when it is not the root -- an
+// inversion or a bass outside the chord alike.
+func BoardText(name string, root, bass int, known bool) string {
 	if name == "" {
 		return ""
 	}
@@ -224,7 +229,7 @@ func BoardText(name string, inv, bass int, known bool) string {
 		return "?"
 	}
 	t := DisplayName(name)
-	if inv > 0 && bass >= 0 && bass < 12 {
+	if bass >= 0 && bass < 12 && bass != root {
 		t += "/" + noteNames[bass]
 	}
 	return t
@@ -290,6 +295,10 @@ func flapSquash(img *image.NRGBA, x int, ch string, col color.NRGBA, top bool, h
 func drawChordFacts(img *image.NRGBA, s ListenScene, held []int, hue color.NRGBA) {
 	y := flapY + flapH + 22
 	x := flapX
+	if s.Interval != "" {
+		text.Draw(img, x, y, s.Interval, Ink)
+		return
+	}
 	if s.Known && s.Root >= 0 {
 		if roman, acc := Degree(Chord{Root: noteNames[s.Root], Notes: []int{s.Root}}, s.Key, s.Mask); roman != "" {
 			if acc != 0 {
@@ -303,14 +312,32 @@ func drawChordFacts(img *image.NRGBA, s ListenScene, held []int, hue color.NRGBA
 			FuncDominant: "DOMINANT", FuncOutside: "OUTSIDE THE SCALE"}[listenFunc(s)]
 		text.Draw(img, x, y, role, Ink)
 		x += text.Width(role) + 14
-		inv := []string{"ROOT POSITION", "1ST INVERSION", "2ND INVERSION", "3RD INVERSION"}
-		if s.Inv < len(inv) {
-			text.Draw(img, x, y, inv[s.Inv], Dim)
+		inv := []string{"ROOT POSITION", "1ST INVERSION", "2ND INVERSION", "3RD INVERSION",
+			"4TH INVERSION", "5TH INVERSION"}
+		var facts []string
+		switch {
+		case s.Inv < 0 && s.Bass >= 0:
+			facts = append(facts, "BASS "+noteNames[s.Bass])
+		case s.Inv < len(inv):
+			facts = append(facts, inv[s.Inv])
 		}
+		for _, o := range s.Omit {
+			if n, ok := omitName[o]; ok {
+				facts = append(facts, "NO "+n)
+			}
+		}
+		text.Draw(img, x, y, strings.Join(facts, " - "), Dim)
 		return
 	}
 	text.Draw(img, x, y, itoa(len(held))+" NOTES - NO NAMED SHAPE", Dim)
 }
+
+// omitName names a note a chord was played without.
+var omitName = map[int]string{7: "5TH", 2: "9TH", 5: "11TH", 4: "3RD", 3: "3RD", 10: "7TH", 11: "7TH", 9: "13TH"}
+
+// IntervalWords names two notes' distance, bass up, as the facts line says it.
+var IntervalWords = []string{"UNISON", "MINOR 2ND", "MAJOR 2ND", "MINOR 3RD", "MAJOR 3RD", "4TH",
+	"TRITONE", "5TH", "MINOR 6TH", "MAJOR 6TH", "MINOR 7TH", "MAJOR 7TH"}
 
 // intervalName is a note's name against the chord's root.
 var intervalName = []string{"R", "b9", "9", "b3", "3", "11", "b5", "5", "#5", "6", "b7", "7"}
@@ -326,7 +353,7 @@ func drawNoteTiles(img *image.NRGBA, s ListenScene, hue color.NRGBA) (moving boo
 		}
 	}
 	ref := s.Root
-	if !s.Known || ref < 0 {
+	if !s.Known || s.Interval != "" || ref < 0 {
 		ref = s.Bass
 	}
 	for i, n := range notes {
@@ -368,7 +395,7 @@ func drawNoteTiles(img *image.NRGBA, s ListenScene, hue color.NRGBA) (moving boo
 		}
 		iv := "?"
 		if ref >= 0 {
-			iv = intervalName[((n.Note%12-ref)+12)%12]
+			iv = toneName(s.Name, ((n.Note%12-ref)+12)%12)
 		}
 		drawInterval(img, x, y+32, iv, ink)
 		center(img, x, noteW, y+noteH-6, noteNames[n.Note%12]+itoa(n.Note/12-2), mix(ink, bg, 0.3))
@@ -388,7 +415,7 @@ func drawKeyboard(img *image.NRGBA, s ListenScene, hue color.NRGBA) (moving bool
 		state[n.Note] = n
 	}
 	ref := s.Root
-	if !s.Known || ref < 0 {
+	if !s.Known || s.Interval != "" || ref < 0 {
 		ref = s.Bass
 	}
 	keyCol := func(note int) color.NRGBA {
@@ -463,4 +490,20 @@ func drawInterval(img *image.NRGBA, x, baseline int, iv string, col color.NRGBA)
 		dx += 13
 	}
 	text.DrawScaled(img, dx, baseline, 2, iv, col)
+}
+
+// NoteName is a MIDI note's name without its octave: 61 is "C#".
+func NoteName(n int) string { return noteNames[((n%12)+12)%12] }
+
+// toneName is a note's place in the chord, spelled as the chord's name
+// spells it: in a 13th chord the major 6th is the 13, and a minor 6th the
+// b13 of a 7b13; anywhere else they are 6 and #5.
+func toneName(chord string, semis int) string {
+	switch {
+	case semis == 9 && strings.Contains(chord, "13"):
+		return "13"
+	case semis == 8 && strings.Contains(chord, "b13"):
+		return "b13"
+	}
+	return intervalName[semis]
 }
