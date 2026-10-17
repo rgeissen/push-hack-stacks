@@ -43,9 +43,10 @@ type look struct {
 	tab     int
 	page    surface.EditPage
 	touched int
-	held    int  // chord a pad is auditioning, -1 none
-	scroll  int  // start of the page's long editor row, -1 follows the value
-	legend  bool // a scene button is held: the screen shows the pad map
+	held    int    // chord a pad is auditioning, -1 none
+	scroll  int    // start of the page's long editor row, -1 follows the value
+	legend  bool   // a scene button is held: the screen shows the pad map
+	patMode string // PATTERNS: "clear"/"copy" armed for the next slot tapped
 	toast   string
 	toastAt time.Time
 }
@@ -196,14 +197,15 @@ func (s *screen) frame(img *image.NRGBA, now time.Time) {
 	}
 	// The position moves every block: read it fresh, with the prog that
 	// says which chord is sounding. Both are in-process calls.
-	var rui, prog string
+	var rui, prog, slots string
 	if !s.eng.Call(func(i *dsp.Instance) {
 		rui, _ = i.GetParam("rui_poll")
 		prog, _ = i.GetParam("prog")
+		slots, _ = i.GetParam("pat_names")
 	}, 200*time.Millisecond) {
 		return
 	}
-	params["prog"] = prog
+	params["prog"], params["pat_names"] = prog, slots
 	s.mu.Lock()
 	l, synced := s.look, s.synced
 	s.mu.Unlock()
@@ -229,7 +231,7 @@ func (s *screen) frame(img *image.NRGBA, now time.Time) {
 	}
 	sc := surface.Scene{M: s.man, Params: params, Tab: l.tab, Touched: l.touched, Head: head,
 		Blink: now.UnixMilli()/500%2 == 1, Toast: toast, Held: l.held, Scroll: l.scroll,
-		Legend: l.legend, Page: l.page}
+		Legend: l.legend, Page: l.page, PatMode: l.patMode}
 	if pr, ok := surface.ParseProg(prog); ok {
 		s.lanes = surface.FitLanes(pr, params["lanes"], s.lanes)
 		sc.Lanes = s.lanes

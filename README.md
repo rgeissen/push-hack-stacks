@@ -22,7 +22,11 @@ browser.
   one is the page you are on.
 - **Hold a scene button** to see on the screen what every pad row on that
   page does. Let go and the screen goes back.
-- **Top two pad rows** are the 16 patterns.
+- **Top two pad rows** are the 16 patterns. Tap a pad to go to that
+  pattern. Hold it to copy the current pattern into it. On the PATTERNS
+  tab, each slot shows its chords, and the bottom buttons are **CLEAR
+  SLOT** and **COPY TO SLOT**: press one, then tap the slot. Press it again
+  to cancel. Holding **Delete** and tapping a pattern pad also clears it.
 - **Inversion shows AUTO** when Voice Grouping is a "dyn" mode. Then
   Stacks picks each chord's inversion itself, so the chord moves as little
   as possible from the chord before. The first chord, and a chord after a

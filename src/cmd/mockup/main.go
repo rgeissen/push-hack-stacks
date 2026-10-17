@@ -72,6 +72,8 @@ func main() {
 		}
 		if sc.name == "07-patterns" {
 			params["patterns"] = "0a65|3" // slots 1,3,6,7,9,12 used; in slot 3
+			params["pat_names"] = "4:4:A E F#m D||4:4:A E F#m D|||6:8:Dm7 G7 Cmaj7 Am7|2:2:Am9 D9||" +
+				"1:4:-|||12:12:A E F#m D|||||"
 		}
 		params["prog"] = setHeader(params["prog"], sc)
 		img := image.NewNRGBA(image.Rect(0, 0, surface.W, surface.H))
@@ -79,6 +81,10 @@ func main() {
 			Head: sc.head, Toast: sc.toast})
 		write(filepath.Join(*out, sc.name+".png"), img)
 		write(filepath.Join(*out, sc.name+"@"+itoa(*scale)+"x.png"), upscale(img, *scale))
+		if sc.tab == surface.TabPatterns { // CLEAR SLOT armed
+			surface.Render(img, surface.Scene{M: m, Params: params, Tab: sc.tab, Touched: -1, Held: -1, Scroll: -1, PatMode: "clear"})
+			write(filepath.Join(*out, sc.name+"-clear@"+itoa(*scale)+"x.png"), upscale(img, *scale))
+		}
 		if sc.pads >= 0 {
 			s := surface.Scene{M: m, Params: params, Tab: sc.tab, Held: -1, Scroll: -1}
 			write(filepath.Join(*out, sc.name+"-pads.png"), renderPads(s, surface.EditPage(sc.pads)))

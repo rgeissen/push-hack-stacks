@@ -55,6 +55,7 @@ type Scene struct {
 	Legend  bool      // a scene button is held: draw the pad map of Page instead
 	Page    EditPage  // the editor page the pads show
 	Lanes   LaneRange // the staff's window, from FitLanes; zero fits it afresh
+	PatMode string    // PATTERNS: "clear" or "copy" armed for the next slot tapped, "" none
 }
 
 const (
@@ -89,7 +90,7 @@ func Render(img *image.NRGBA, s Scene) {
 	p.Playing = p.Sounding(s.Held)
 	drawTabs(img, s)
 	if s.Tab == TabPatterns {
-		drawPatternsHead(img)
+		drawPatternsHead(img, s.PatMode)
 	} else {
 		drawEncoders(img, s)
 	}
@@ -523,6 +524,15 @@ type Action struct {
 	Label      string
 	Key, Value string
 	Lit        func(map[string]string, Prog) bool
+	Mode       string // a host-side mode it arms instead of a param ("clear", "copy")
+}
+
+// IsLit reports whether a button shows its action as on.
+func (a Action) IsLit(s Scene, p Prog) bool {
+	if a.Mode != "" {
+		return a.Mode == s.PatMode
+	}
+	return a.Lit != nil && a.Lit(s.Params, p)
 }
 
 var editActions = []Action{
@@ -544,6 +554,16 @@ func Actions(tab int) []Action {
 		return func(m map[string]string, _ Prog) bool { return m["preview"] == v }
 	}
 	switch tab {
+	case TabPatterns:
+		// The slots' own row. The edit row's DELETE here deleted the
+		// selected CHORD -- pressed on device to clear a slot, it took the
+		// pattern's chords one by one and left the slot as it was.
+		return []Action{
+			{Label: "CLEAR SLOT", Mode: "clear"},
+			{Label: "COPY TO SLOT", Mode: "copy"},
+			{}, {}, {}, {},
+			editActions[6], editActions[7],
+		}
 	case TabFeel:
 		return []Action{
 			{Label: "PREV OFF", Key: "preview", Value: "off", Lit: prev("off")},
@@ -577,7 +597,7 @@ func drawActions(img *image.NRGBA, s Scene, p Prog) {
 			continue
 		}
 		col := Ink
-		if a.Lit != nil && a.Lit(s.Params, p) {
+		if a.IsLit(s, p) {
 			gfx.FillRect(img, x+2, actY+2, ColW-4, actH-3, Ink)
 			col = Ground
 		}
@@ -587,7 +607,12 @@ func drawActions(img *image.NRGBA, s Scene, p Prog) {
 
 // ---- patterns ----------------------------------------------------------
 
-func drawPatternsHead(img *image.NRGBA) {
+func drawPatternsHead(img *image.NRGBA, mode string) {
+	if ask, ok := map[string]string{"clear": "TAP THE SLOT TO CLEAR", "copy": "TAP THE SLOT TO COPY THIS PATTERN INTO"}[mode]; ok {
+		text.DrawScaled(img, 8, encY+31, 2, ask, Focus)
+		right(img, W-8, encY+12, "PRESS "+map[string]string{"clear": "CLEAR SLOT", "copy": "COPY TO SLOT"}[mode]+" AGAIN TO CANCEL", Dim)
+		return
+	}
 	cells := [][2]string{{"PATTERNS", ""}, {"", ""}, {"TAP", "GO TO SLOT"}, {"", ""},
 		{"HOLD", "COPY INTO SLOT"}, {"", ""}, {"DELETE + TAP", "CLEAR SLOT"}, {"", ""}}
 	text.DrawScaled(img, 8, encY+31, 2, "16 SLOTS", Bright)
@@ -605,26 +630,67 @@ func drawPatternsHead(img *image.NRGBA) {
 // here the column grid is honest: slot 3 IS the third pad of its row.
 func drawPatterns(img *image.NRGBA, s Scene) {
 	mask, cur := parsePatterns(s.Params["patterns"])
+	slots := ParseSlots(s.Params["pat_names"])
 	h := (stY1 - stY0) / 2
 	for i := 0; i < 16; i++ {
 		x, y := (i%8)*ColW, stY0+(1-i/8)*h // bottom row is 1-8, as on the pads
 		used := mask&(1<<i) != 0
+		active := i+1 == cur
 		gfx.FillRect(img, x+2, y+1, ColW-4, h-2, Panel)
-		label, col := "EMPTY", Rule
-		if used {
-			label, col = "MUSIC", Ink
-		}
-		if i+1 == cur {
+		if active {
 			frame(img, x+2, y+1, ColW-4, h-2, Focus)
-			label, col = "ACTIVE", Focus
 		}
 		numCol := Dim
-		if used || i+1 == cur {
+		if used || active {
 			numCol = Bright
 		}
-		text.DrawScaled(img, x+9, y+33, 2, pad2(i+1), numCol)
-		right(img, x+ColW-9, y+15, label, col)
+		text.DrawScaled(img, x+9, y+29, 2, pad2(i+1), numCol)
+		sl := slots[i]
+		switch {
+		case !used:
+			right(img, x+ColW-9, y+15, "EMPTY", Rule)
+		case sl.Count == 0: // used, but the module did not say with what
+		default:
+			// What is in it: how much, then the chords themselves.
+			right(img, x+ColW-9, y+15, itoa(sl.Count)+" CH "+itoa(sl.Bars)+" BAR", Dim)
+			shown := make([]string, len(sl.Names))
+			for k, n := range sl.Names {
+				shown[k] = DisplayName(n)
+			}
+			names := strings.Join(shown, " ")
+			if sl.Count > len(sl.Names) {
+				names += " +" + itoa(sl.Count-len(sl.Names))
+			}
+			col := Ink
+			if active {
+				col = Focus
+			}
+			text.Draw(img, x+9, y+h-4, text.Truncate(names, (ColW-18)/7), col)
+		}
+		if active {
+			right(img, x+ColW-9, y+29, "ACTIVE", Focus)
+		}
 	}
+}
+
+// Slot is what a pattern slot holds, from the module's `pat_names`.
+type Slot struct {
+	Count, Bars int
+	Names       []string // the first four chords; "-" a rest
+}
+
+// ParseSlots reads `pat_names`: sixteen '|'-split fields, COUNT:BARS:NAMES
+// or empty. A module without the key gives sixteen empty slots.
+func ParseSlots(v string) [16]Slot {
+	var out [16]Slot
+	for i, f := range strings.SplitN(v, "|", 16) {
+		parts := strings.SplitN(f, ":", 3)
+		if len(parts) < 3 {
+			continue
+		}
+		out[i] = Slot{Count: atoi(parts[0]), Bars: atoi(parts[1]), Names: strings.Fields(parts[2])}
+	}
+	return out
 }
 
 func parsePatterns(v string) (mask, cur int) {

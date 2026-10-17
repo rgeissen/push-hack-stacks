@@ -251,7 +251,7 @@ func (s *surfaceCtl) cc(cc, val uint8) {
 			return
 		}
 		if pressed {
-			s.scr.Update(func(l *look) { l.tab = i })
+			s.scr.Update(func(l *look) { l.tab, l.patMode = i, "" })
 		}
 
 	case cc >= push3.CCScreenBot1 && cc <= push3.CCScreenBot8:
@@ -259,7 +259,13 @@ func (s *surfaceCtl) cc(cc, val uint8) {
 			return
 		}
 		acts := surface.Actions(l.tab)
-		if i := int(cc - push3.CCScreenBot1); i < len(acts) && acts[i].Key != "" {
+		i := int(cc - push3.CCScreenBot1)
+		switch {
+		case i >= len(acts):
+		case acts[i].Mode != "": // arm (or disarm) it for the next slot tapped
+			m := acts[i].Mode
+			s.scr.Update(func(l *look) { l.patMode = map[bool]string{true: "", false: m}[l.patMode == m] })
+		case acts[i].Key != "":
 			s.fire(acts[i].Key, acts[i].Value, acts[i].Label)
 		}
 
@@ -420,6 +426,16 @@ func (s *surfaceCtl) note(n, vel uint8) {
 			if s.del {
 				s.delUsed = true
 				s.fire("pat_delete", slot, "CLEARED SLOT "+slot)
+				return
+			}
+			switch mode := s.scr.Look().patMode; mode { // armed on the bottom row
+			case "clear", "copy":
+				s.scr.Update(func(l *look) { l.patMode = "" })
+				if mode == "clear" {
+					s.fire("pat_delete", slot, "CLEARED SLOT "+slot)
+				} else {
+					s.fire("pat_store", slot, "COPIED TO SLOT "+slot)
+				}
 				return
 			}
 			s.padAt[n] = time.Now()
@@ -587,7 +603,7 @@ func (s *surfaceCtl) paint(sc surface.Scene, page surface.EditPage) {
 			continue
 		}
 		v := white
-		if a.Lit != nil && a.Lit(params, prog) {
+		if a.IsLit(surface.Scene{Params: params, PatMode: sc.PatMode}, prog) {
 			v = amber
 		}
 		want[uint8(push3.CCScreenBot1+i)] = v

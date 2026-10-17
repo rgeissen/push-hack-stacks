@@ -4744,6 +4744,39 @@ static int stk_get_param(void *instance, const char *key, char *buf, int buf_len
         }
         return snprintf(buf, buf_len, "%04x|%d", mask, k->pat_cur + 1);
     }
+    if (strcmp(key, "pat_names") == 0) {
+        /*
+         * WHAT IS IN EACH SLOT, so a surface can say it: sixteen fields split
+         * by '|', 1-based by position; an empty slot is an empty field, a used
+         * one is COUNT:BARS:NAMES, the first four chords named as `prog` names
+         * them (sounding root and the written shape) and spaced, a rest "-".
+         * Asked for on Push, where a slot only said "MUSIC" -- every used slot
+         * the same word. The ACTIVE slot is the buffer, as in `patterns`.
+         */
+        const stk_t *k = (const stk_t *)st;
+        int at = 0;
+        for (int i = 0; i < STK_PATTERNS && at < buf_len - 1; i++) {
+            int cur = (i == k->pat_cur);
+            const stk_prog_t *pp = cur ? &k->prog : &k->pat[i].prog;
+            int used = cur ? !buffer_is_empty(&k->prog) : k->pat[i].used;
+            at += snprintf(buf + at, buf_len - at, "%s", i ? "|" : "");
+            if (!used || at >= buf_len - 1) continue;
+            at += snprintf(buf + at, buf_len - at, "%d:%d:", pp->count,
+                           cur ? k->bars : k->pat[i].bars);
+            for (int j = 0; j < pp->count && j < 4 && at < buf_len - 1; j++) {
+                const stk_chord_t *ch = &pp->ch[j];
+                if (ch->shape == SHAPE_REST) {
+                    at += snprintf(buf + at, buf_len - at, "%s-", j ? " " : "");
+                    continue;
+                }
+                const stk_chord_t pl = played(k, ch);
+                int spc = ((sounding_root(&pl, 0, pp->scale, pp->key) % 12) + 12) % 12;
+                at += snprintf(buf + at, buf_len - at, "%s%s%s", j ? " " : "",
+                               NOTE_NAMES[spc], SHAPES[ch->shape].suffix);
+            }
+        }
+        return at < buf_len ? at : buf_len - 1;
+    }
     if (strcmp(key, "status") == 0) {
         /*
          * ARMED IS A STATE OF THE MODULE, NOT A GUESS BY A SURFACE.
