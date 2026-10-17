@@ -3,17 +3,26 @@ package main
 // control.go -- the Push as Stacks' control surface.
 //
 // Stacks reads the Push's own port (16:0, found by name), which the ALSA
-// sequencer broadcasts: push-manager keeps reading it too. Shift + Help
-// takes the surface -- the display, MIDI intercept (so Live stops seeing
-// pads and buttons, except Play and Record), and the LEDs -- and the LIVE
-// tab gives it all back. Everything a control changes goes through
-// Engine.Call: the C core has one caller, always.
+// sequencer broadcasts: push-manager keeps reading it too. Everything a
+// control changes goes through Engine.Call: the C core has one caller,
+// always.
+//
+// With Push Hack Home (push-manager's switcher, Shift + Help) Stacks is an
+// app: push-manager lends it the surface -- the display, the MIDI intercept
+// (Live keeps Play, Record, tempo and volume) and the LEDs -- when the user
+// picks STACKS, and the session says focus and blur. The LIVE tab gives the
+// surface back; Shift + LIVE switches to listen mode (the screen only).
+// With an older push-manager Stacks takes the surface itself, and Shift +
+// Help cycles Live -> edit -> listen as in 0.2.
 
 import (
+	"context"
 	"errors"
 	"log"
 	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/federico-pepe/ableton-push-hack/core/alsaseq"
@@ -45,6 +54,10 @@ type surfaceCtl struct {
 	man    *surface.Manifest
 	pm     *pmclient.Client
 
+	// managed: push-manager has Push Hack Home, and lends Stacks the
+	// surface; focused: it has lent it now.
+	managed, focused atomic.Bool
+
 	mu        sync.Mutex
 	c         *alsaseq.Client // nil until MIDI is up
 	push      alsaseq.Addr
@@ -71,9 +84,11 @@ const ledRefresh = time.Second
 
 func newSurface(eng *Engine, scr *screen, man *surface.Manifest) *surfaceCtl {
 	pm := pmclient.New("http://127.0.0.1:7701")
+	pm.App = "stacks" // hack.json's id: push-manager lets Stacks' frames through while it owns the surface
 	s := &surfaceCtl{eng: eng, scr: scr, man: man, pm: pm, deps: newDeps(pm),
 		padAt: map[uint8]time.Time{}}
 	scr.pads = s.paint
+	scr.managed = s.managed.Load
 	scr.retake = func() {
 		if s.mode() == modeEdit {
 			if err := s.pm.SetMidiFilterPass(true, passToLive); err != nil {
@@ -147,6 +162,9 @@ func (s *surfaceCtl) mode() int {
 }
 
 func (s *surfaceCtl) setMode(m, tab int) error {
+	if s.managed.Load() {
+		return s.askMode(m, tab)
+	}
 	cur := s.mode()
 	if m != modeLive {
 		if p := s.deps.Problem(); p != "" { // say what is missing, do not half-take
@@ -171,6 +189,57 @@ func (s *surfaceCtl) setMode(m, tab int) error {
 			return err
 		}
 	}
+	s.apply(m, cur)
+	return nil
+}
+
+// askMode is setMode under Push Hack Home: push-manager switches the
+// display and the intercept. Editing from Live asks push-manager to open
+// Stacks (the focus that answers applies it); listen and back to editing
+// switch the intercept of a Stacks that already has the surface; Live
+// gives it back (the blur applies it).
+func (s *surfaceCtl) askMode(m, tab int) error {
+	if tab >= 0 && tab < 7 {
+		s.scr.Update(func(l *look) { l.tab = tab })
+	}
+	if m != modeLive {
+		if p := s.deps.Problem(); p != "" {
+			s.deps.note(p)
+			return errors.New(p)
+		}
+	}
+	cur := s.mode()
+	switch {
+	case m == modeLive:
+		if !s.focused.Load() {
+			return nil
+		}
+		return s.pm.SurfaceLeave("live")
+	case !s.focused.Load():
+		if err := s.pm.SurfaceOpen(); err != nil {
+			return err
+		}
+		if m == modeListen {
+			return s.pm.SurfaceInput(false) // opened, then the screen only
+		}
+		return nil
+	case m == cur:
+		return nil
+	}
+	if err := s.pm.SurfaceInput(m == modeEdit); err != nil {
+		return err
+	}
+	s.apply(m, cur)
+	return nil
+}
+
+// apply puts Stacks itself in mode m, coming from cur: the screen, the
+// pads, parking, the listen track.
+func (s *surfaceCtl) apply(m, cur int) {
+	if s.managed.Load() {
+		s.scr.SetListen(m == modeListen)
+		s.scr.Set(m != modeLive, -1) //nolint:errcheck // managed: no call to push-manager
+	}
 	s.mu.Lock()
 	s.active, s.listening = m == modeEdit, m == modeListen
 	s.mu.Unlock()
@@ -187,8 +256,75 @@ func (s *surfaceCtl) setMode(m, tab int) error {
 	if s.listen != nil && (m == modeListen) != (cur == modeListen) {
 		go s.listen.set(m == modeListen) // the listen track in Live, on or off
 	}
-	log.Printf("surface: %s", []string{"given back to Live", "taken (Shift + Help)", "listening (pads and buttons with Live)"}[m])
-	return nil
+	log.Printf("surface: %s", []string{"given back to Live", "editing (pads, buttons and screen)", "listening (pads and buttons with Live)"}[m])
+}
+
+// session holds Stacks' session with push-manager while Stacks runs: with
+// Push Hack Home, focus and blur decide when Stacks has the surface.
+// Without it (an older push-manager), Stacks takes the surface itself,
+// and asks again later in case push-manager was updated.
+func (s *surfaceCtl) session(done <-chan struct{}) {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() { <-done; cancel() }()
+	for ctx.Err() == nil {
+		if !s.pm.HasSwitcher() {
+			s.managed.Store(false)
+			select {
+			case <-ctx.Done():
+			case <-time.After(depsEvery):
+			}
+			continue
+		}
+		if !s.managed.Swap(true) {
+			log.Printf("surface: push-manager has Push Hack Home: Shift + Help opens it, Stacks is there")
+		}
+		s.pm.RunSurface(ctx, passToLive, pmclient.SurfaceHandler{ //nolint:errcheck
+			OnFocus: func() {
+				s.focused.Store(true)
+				s.apply(modeEdit, s.mode())
+			},
+			OnBlur: func() {
+				s.focused.Store(false)
+				s.apply(modeLive, s.mode())
+			},
+		})
+	}
+}
+
+// statusLoop keeps Stacks' card in Home current: the key, and the
+// progression with its length (each line about 14 characters on the card).
+func (s *surfaceCtl) statusLoop(done <-chan struct{}) {
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	var last [2]string
+	for {
+		select {
+		case <-done:
+			return
+		case <-t.C:
+		}
+		if !s.managed.Load() {
+			continue
+		}
+		var prog, key, scale, steps string
+		s.eng.Call(func(i *dsp.Instance) {
+			prog, _ = i.GetParam("progression")
+			key, _ = i.GetParam("key")
+			scale, _ = i.GetParam("scale")
+			steps, _ = i.GetParam("steps")
+		}, 500*time.Millisecond)
+		second := steps + " CHORDS"
+		if p := strings.TrimSpace(prog); p != "" && !strings.EqualFold(p, "none") {
+			second = p + ", " + steps
+		}
+		lines := [2]string{strings.ToUpper(key + " " + scale), strings.ToUpper(second)}
+		if lines == last {
+			continue
+		}
+		if err := s.pm.SurfaceStatus(lines[0], lines[1]); err == nil {
+			last = lines
+		}
+	}
 }
 
 func (s *surfaceCtl) isActive() bool {
@@ -197,9 +333,10 @@ func (s *surfaceCtl) isActive() bool {
 	return s.active
 }
 
-// Close gives the surface back, for shutdown.
+// Close gives the surface back, for shutdown. Under Push Hack Home the
+// session ends with the process and push-manager takes the surface back.
 func (s *surfaceCtl) Close() {
-	if s.isActive() {
+	if s.isActive() && !s.managed.Load() {
 		s.pm.SetMidiFilter(false)
 	}
 	if s.mode() == modeListen && s.listen != nil {
@@ -251,7 +388,10 @@ func (s *surfaceCtl) handle(msg []byte) {
 	// Push3, which then believes Shift and Help are still held -- and Play
 	// became Shift + Play (seen on device: the button lit, nothing ran).
 	cur := s.mode()
-	if kind == 0xB0 && num == push3.CCHelp && val > 0 && s.shift {
+	if s.managed.Load() {
+		// Shift + Help is push-manager's now (Push Hack Home), whatever mode.
+		s.pendingTake = false
+	} else if kind == 0xB0 && num == push3.CCHelp && val > 0 && s.shift {
 		s.pendingTake = true
 	}
 	if s.pendingTake && !s.shift && !s.help {
@@ -290,9 +430,14 @@ func (s *surfaceCtl) cc(cc, val uint8) {
 		i := int(cc - push3.CCScreenTop1)
 		if i == 7 {
 			// Give the surface back on the RELEASE: intercept is still on
-			// for the press, so Push3 sees neither half of it.
+			// for the press, so Push3 sees neither half of it. Under Push
+			// Hack Home, Shift + LIVE is listen mode: the screen stays.
 			if !pressed {
-				if err := s.SetActive(false, -1); err != nil {
+				m := modeLive
+				if s.shift && s.managed.Load() {
+					m = modeListen
+				}
+				if err := s.setMode(m, -1); err != nil {
 					log.Printf("surface: release: %v", err)
 				}
 			}

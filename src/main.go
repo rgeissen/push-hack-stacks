@@ -63,6 +63,8 @@ func main() {
 	scrDone.Add(1)
 	go func() { defer scrDone.Done(); scr.run(ctx.Done()) }()
 	go ctl.deps.run(ctx.Done())
+	go ctl.session(ctx.Done())    // Push Hack Home: focus and blur
+	go ctl.statusLoop(ctx.Done()) // the card in Home
 	ctl.follow = newFollower(pmclient.New("http://127.0.0.1:7701"), engineParams{eng}, *dataDir, scr.Toast)
 	scr.follows = ctl.follow.On
 	go ctl.follow.run(ctx.Done())

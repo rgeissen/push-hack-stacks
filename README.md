@@ -16,10 +16,17 @@ Every control is in the
 [control matrix](https://rgeissen.github.io/push-hack-stacks/control-matrix.html)
 (`docs/control-matrix.html`, built from the code by `make matrix`).
 
-- **Shift + Help** cycles three modes: Live, then Stacks editing (screen,
-  pads and buttons), then Stacks **listening** (the screen only), then Live
-  again. The LIVE tab also gives everything back to Live. While Stacks is
-  not editing it plays nothing.
+- **Open Stacks from Push Hack Home**: press **Shift + Help** and pick
+  STACKS (a top button, its pad column, or the jog). Stacks then has the
+  screen, pads and buttons (editing). **Shift + LIVE** (the eighth top
+  button) switches to **listening** (the screen only); Shift + Help goes
+  back to Home, the LIVE tab back to Live. Star Stacks in Home, or make it
+  the superstar to open it with **Shift + Help, Help**. While Stacks is not
+  editing it plays nothing. Home's card for Stacks shows its key and its
+  progression.
+- **With an older Push Hack** (no Push Hack Home), Shift + Help cycles
+  three modes as in 0.2: Live, then Stacks editing, then Stacks listening,
+  then Live again.
 - **Listen mode** keeps your pads, buttons and encoders with Live. Play as
   usual; the screen names the chord you play, animated as you add notes:
   its name, degree and role in the key, inversion or slash bass, and what
@@ -94,7 +101,9 @@ chord, the same way a keyboard does on Move.
   pass-through buttons and raw frames
   ([#33](https://github.com/federico-pepe/ableton-push-hack/pull/33)).
   With an older one, Stacks still plays into Live and the browser panel
-  works. Shift + Help then shows on the screen what to update. The log
+  works. Shift + Help then shows on the screen what to update. Push Hack
+  Home ([#38](https://github.com/federico-pepe/ableton-push-hack/pull/38))
+  is how Stacks opens on a Push Hack that has it. The log
   (`/data/push-hack/logs/stacks.log`) says it too, with lines starting
   `deps:`.
 - For listen mode and Shift + Scale: Browser Bridge active in Live, 0.4 or

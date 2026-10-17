@@ -77,7 +77,7 @@ TAB_NOTE = {
     "FEEL": "The whole progression's timing and touch.",
     "CLIP": "Performing and recording: Stamp, Clip Transpose, Clip Octave, Run.",
     "PATTERNS": "Sixteen buffers. The screen shows each slot's chords.",
-    "LIVE": "Gives the surface back to Live.",
+    "LIVE": "Gives the surface back to Live. Shift + LIVE: listen mode, the screen only.",
 }
 
 ACTION_TEXT = {
@@ -104,8 +104,8 @@ ACTION_TEXT = {
 # Every other control, grouped by role. id -> (label, gesture text, LED text)
 KEYS = {
     "edit": [
-        ("shift", "Shift", "Modifier. Shift + Help cycles Stacks' modes; Shift + Undo redoes; Shift + Double Loop is double time; Shift + jog changes tab; Shift + Scale follows Push's scale.", "white"),
-        ("help", "Help", "With Shift, on the release: Live -> Stacks (edit) -> Stacks (listen) -> Live.", "white"),
+        ("shift", "Shift", "Modifier. Shift + Help opens Push Hack Home; Shift + LIVE switches to listen mode; Shift + Undo redoes; Shift + Double Loop is double time; Shift + jog changes tab; Shift + Scale follows Push's scale.", "white"),
+        ("help", "Help", "Push-manager's: Shift + Help opens Push Hack Home, where STACKS opens Stacks; Shift + Help, Help opens the superstar. With an older Push Hack without Home: Live -> Stacks (edit) -> Stacks (listen) -> Live.", "white"),
         ("delete", "Delete", "Tap: deletes the selected chord. Hold and tap a pattern pad: clears that slot.", "white"),
         ("undo", "Undo", "Undo. With Shift: redo.", "white"),
         ("add", "Add", "Inserts a copy of the selected chord after it.", "white"),
@@ -229,7 +229,7 @@ for group, title in (("edit", "Edit keys"), ("nav", "Navigation"), ("live", "Liv
         btn_rows.append(f'<tr><th>{e(label)}</th><td>{e(text)}</td><td class="note">{LEDTXT[led]}</td></tr>')
 btn_rows.insert(0, '<tr class="grp"><th colspan="3">Screen buttons and scene column</th></tr>'
     '<tr><th>Top 1-7</th><td>Tabs: MAIN, START, CHORD, VOICE, FEEL, CLIP, PATTERNS. They pick what the encoders and the bottom row do.</td><td class="note">amber on the tab you are on, white on the others</td></tr>'
-    '<tr><th>Top 8</th><td>LIVE: gives the surface back to Live, on the release. Stacks stops playing along.</td><td class="note">white</td></tr>'
+    '<tr><th>Top 8</th><td>LIVE: gives the surface back to Live, on the release. Stacks stops playing along. Shift + LIVE: listen mode (the screen only; pads and buttons with Live).</td><td class="note">white</td></tr>'
     '<tr><th>Bottom 1-8</th><td>The tab\'s actions; see each bank above.</td><td class="note">white; amber while that action is on or armed</td></tr>'
     '<tr><th>1/4, 1/4t, 1/8</th><td>The pad page: WRITE, VOICE, FEEL. Hold to see the page\'s pad map on the screen.</td><td class="note">amber on the page you are on, white on the others</td></tr>'
     '<tr><th>Encoders 1-8</th><td>The tab\'s parameters. Touch one and its label lights. A step takes six ticks on a short list, three on a medium one, two on a long one; only the long lists accelerate. A trigger fires once per turn.</td><td class="note">no LED</td></tr>')
@@ -439,7 +439,7 @@ scenes = "".join(
             for s in ("1/8t", "1/16", "1/16t", "1/32", "1/32t"))
 
 notes = [
-    ("Shift + Help cycles three modes.", "Live, then Stacks editing (screen, pads, buttons), then Stacks listening (the screen only), then Live again. All on the release: taking the surface mid-press left Push believing Shift was still held."),
+    ("Open it from Push Hack Home.", "Shift + Help opens Home, push-manager's switcher; pick STACKS. Star it there, or make it the superstar to open it with Shift + Help, Help. Shift + LIVE switches to listen mode; LIVE gives everything back. With an older Push Hack without Home, Shift + Help cycles Live, editing and listening, as in 0.2."),
     ("Live keeps the transport.", "Play, Record, Metronome, Tap Tempo, the tempo and volume encoders go to Live, with Live's own LEDs. Stacks follows Live's clock."),
     ("Closed is parked.", "When you close Stacks it stops playing along with Live; opening gives Run back. A stamp that is armed still plays."),
     ("Hold a chord pad to hear it.", "The chord loops with its rhythm while you hold the pad, and a playhead runs inside it. Tapping only selects."),
@@ -471,7 +471,7 @@ page = f"""<title>Stacks Push Matrix</title>
     <div>
       <h1>Stacks</h1>
       <p>Control matrix for the chord-progression tool on <strong>Ableton Push 3</strong>, a Push Hack catalog hack.
-         <strong>Shift&nbsp;+&nbsp;Help</strong> opens it on Push's screen, encoders, buttons and pads; Live keeps the transport.
+         Open it from <strong>Push Hack Home</strong> (<strong>Shift&nbsp;+&nbsp;Help</strong>): it takes Push's screen, encoders, buttons and pads; Live keeps the transport.
          The same six banks as on Move, with full names on a 960&times;160 screen and 64 pads that write the selected chord.</p>
     </div>
     <div class="stats">
@@ -514,7 +514,7 @@ page = f"""<title>Stacks Push Matrix</title>
   <p class="lede">The bottom two rows are always the chords and the top two always the patterns. The middle four write the selected chord, and change with the page. Holding a scene button shows the screen below; the table is the same map, with the pads' LED colours.</p>
   {''.join(page_html)}
 
-  <p class="eyebrow">Listen mode &mdash; Shift + Help, twice</p>
+  <p class="eyebrow">Listen mode &mdash; Shift + LIVE</p>
   <p class="lede">The pads, buttons and encoders stay with Live: play your instrument as usual. The screen names the chord being played, on split-flap tiles that flip as you add a note (C, CMAJ, CMAJ7), with its degree and role in the key, its inversion or slash bass, and what a voicing leaves out. One tile per note drops in and latches; the keys go down, the root in amber. Below: C E B in A minor, a Cmaj7 without its 5th.</p>
   <figure class="padpage">
     <figcaption><b>LISTEN</b> &middot; the device renderer's own frame</figcaption>

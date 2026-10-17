@@ -9,8 +9,8 @@ require (
 	golang.org/x/text v0.37.0 // indirect
 )
 
-// TEMPORARY, until federico-pepe/ableton-push-hack#33, #36 (live scale) and #37 (listen) are merged and
-// tagged: core with pass-through buttons, raw frames and
-// MidiFilterStatus, from that PR's branch on the fork. Replace with the
-// new core/vX.Y.Z tag and delete this (framework rule: a tag, no replace).
-replace github.com/federico-pepe/ableton-push-hack/core => github.com/rgeissen/ableton-push-hack/core v0.0.0-20261017150506-1a645d833cdb
+// TEMPORARY, until federico-pepe/ableton-push-hack#33, #36 (live scale),
+// #37 (listen) and #38 (Push Hack Home) are merged and tagged: core from
+// #38's branch on the fork. Replace with the new core/vX.Y.Z tag and delete
+// this (framework rule: a tag, no replace).
+replace github.com/federico-pepe/ableton-push-hack/core => github.com/rgeissen/ableton-push-hack/core v0.0.0-20261017180535-6ab4de6b5615

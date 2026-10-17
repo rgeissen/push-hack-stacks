@@ -23,6 +23,7 @@ PIDF=/tmp/push-hack-stacks.pid
 read -r -a XOPTS <<< "${SSH_OPTS:-}"
 SSH=(ssh -n -o BatchMode=yes -o ConnectTimeout=10 ${XOPTS[@]+"${XOPTS[@]}"} "ableton@${HOST}")
 ROOTSSH=(ssh -n -o BatchMode=yes -o ConnectTimeout=10 ${XOPTS[@]+"${XOPTS[@]}"} "root@${HOST}")
+ROOTPIPE=(ssh -o BatchMode=yes -o ConnectTimeout=10 ${XOPTS[@]+"${XOPTS[@]}"} "root@${HOST}") # reads stdin
 SERVICE=/etc/init.d/push-hack-stacks
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -40,6 +41,15 @@ if "${ROOTSSH[@]}" "test -x $SERVICE"; then # installed from the catalog
         exit 0
     fi
     scp -q -o BatchMode=yes ${XOPTS[@]+"${XOPTS[@]}"} "${ROOT}/stacks" "root@${HOST}:${DIR}/stacks.new"
+    # The installed hack.json carries the port the catalog assigned: keep
+    # it, take everything else from this checkout (a new field, such as
+    # "surface" for Push Hack Home, must reach the device).
+    "${ROOTSSH[@]}" "cat $DIR/hack.json" | python3 -c '
+import json, sys
+installed = json.load(sys.stdin)
+new = json.load(open(sys.argv[1]))
+new["port"] = installed.get("port", new.get("port"))
+print(json.dumps(new, indent=2))' "${ROOT}/hack.json" | "${ROOTPIPE[@]}" "cat > $DIR/hack.json.new && mv $DIR/hack.json.new $DIR/hack.json"
     # The service's stop does not wait for the exit (Stacks saves its state
     # first, ~1 s), and its start skips a pid still alive: wait here.
     "${ROOTSSH[@]}" "$SERVICE stop; for i in \$(seq 50); do pidof stacks >/dev/null || break; sleep 0.1; done; \

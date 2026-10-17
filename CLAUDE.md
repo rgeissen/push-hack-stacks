@@ -57,9 +57,15 @@ pinned in `surface/inversion_test.go` with voicings measured off the core:
 
 ## Listen mode (listen.go, surface/listen.go)
 
-- Shift + Help cycles modeLive -> modeEdit -> modeListen (control.go
-  setMode). Listening: display only, intercept off, Stacks parked, no LED
-  painting.
+- With Push Hack Home (push-manager #38) Stacks is an app: the session
+  (control.go `session`, pmclient.RunSurface) says focus (-> modeEdit) and
+  blur (-> modeLive); `askMode` asks push-manager for the rest: Shift +
+  LIVE -> modeListen (SurfaceInput false), LIVE -> SurfaceLeave. Stacks
+  must not handle Shift + Help then: it is push-manager's. Never call
+  SetMode or SetMidiFilter when managed; push-manager owns both.
+- Without Home (an older push-manager), Shift + Help cycles modeLive ->
+  modeEdit -> modeListen (control.go setMode). Listening: display only,
+  intercept off, Stacks parked, no LED painting.
 - The notes come from port `Stacks Listen`, fed by Browser Bridge's listen
   track (input = the selected track, Post FX). On Push the pads are not a
   MIDI input another track can take; a track as input is.

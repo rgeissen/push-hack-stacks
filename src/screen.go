@@ -71,6 +71,7 @@ type screen struct {
 	listen    *listenState      // what is played, in listen mode; nil before main sets it
 	listening bool              // listen mode: draw the played chord, not the editor
 	retake    func()            // re-takes what the mode holds besides the display; set by the surface
+	managed   func() bool       // Push Hack Home lends the surface: push-manager switches the display
 	synced    bool              // Live is connected to Stacks In
 	stats     struct {
 		sent      int
@@ -95,8 +96,11 @@ func (s *screen) Set(on bool, tab int) error {
 	if on == s.on {
 		return nil
 	}
-	if err := s.pm.SetMode(map[bool]int{true: 2, false: 0}[on]); err != nil {
-		return err
+	// Under Push Hack Home push-manager has switched the display already.
+	if s.managed == nil || !s.managed() {
+		if err := s.pm.SetMode(map[bool]int{true: 2, false: 0}[on]); err != nil {
+			return err
+		}
 	}
 	s.on = on
 	return nil
@@ -204,7 +208,7 @@ func (s *screen) check() {
 	s.synced = synced
 	on := s.on
 	s.mu.Unlock()
-	if !on {
+	if !on || (s.managed != nil && s.managed()) { // Push Hack Home re-takes nothing: push-manager owns it
 		return
 	}
 	if st, err := s.pm.DisplayStatus(); err == nil && st.Connected && st.Mode != 2 {
