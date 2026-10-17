@@ -44,6 +44,7 @@ type look struct {
 	page    surface.EditPage
 	touched int
 	held    int // chord a pad is auditioning, -1 none
+	scroll  int // start of the page's long editor row, -1 follows the value
 	toast   string
 	toastAt time.Time
 }
@@ -72,7 +73,7 @@ type screen struct {
 
 func newScreen(eng *Engine, man *surface.Manifest) *screen {
 	return &screen{hold: holdState{chord: -1}, eng: eng, man: man, pm: pmclient.New("http://127.0.0.1:7701"),
-		look: look{tab: 2, touched: -1, held: -1}, synced: true}
+		look: look{tab: 2, touched: -1, held: -1, scroll: -1}, synced: true}
 }
 
 // Set takes the display (mode 2) or gives it back to Live (mode 0).
@@ -225,7 +226,7 @@ func (s *screen) frame(img *image.NRGBA, now time.Time) {
 		toast = syncHint
 	}
 	sc := surface.Scene{M: s.man, Params: params, Tab: l.tab, Touched: l.touched, Head: head,
-		Blink: now.UnixMilli()/500%2 == 1, Toast: toast, Held: l.held}
+		Blink: now.UnixMilli()/500%2 == 1, Toast: toast, Held: l.held, Scroll: l.scroll}
 	if s.pads != nil {
 		s.pads(sc, l.page)
 	}

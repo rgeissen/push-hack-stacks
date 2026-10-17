@@ -75,12 +75,12 @@ func main() {
 		}
 		params["prog"] = setHeader(params["prog"], sc)
 		img := image.NewNRGBA(image.Rect(0, 0, surface.W, surface.H))
-		surface.Render(img, surface.Scene{M: m, Params: params, Tab: sc.tab, Touched: sc.touched, Held: -1,
+		surface.Render(img, surface.Scene{M: m, Params: params, Tab: sc.tab, Touched: sc.touched, Held: -1, Scroll: -1,
 			Head: sc.head, Toast: sc.toast})
 		write(filepath.Join(*out, sc.name+".png"), img)
 		write(filepath.Join(*out, sc.name+"@"+itoa(*scale)+"x.png"), upscale(img, *scale))
 		if sc.pads >= 0 {
-			s := surface.Scene{M: m, Params: params, Tab: sc.tab, Held: -1}
+			s := surface.Scene{M: m, Params: params, Tab: sc.tab, Held: -1, Scroll: -1}
 			write(filepath.Join(*out, sc.name+"-pads.png"), renderPads(s, surface.EditPage(sc.pads)))
 		}
 		log.Printf("%s", sc.name)

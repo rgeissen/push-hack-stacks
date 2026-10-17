@@ -43,23 +43,25 @@ type EditRow struct {
 	Name    string
 	Options []string // what each pad writes
 	Labels  []string // what each pad is called
+	Start   int      // first option shown, for a row longer than eight
+	Total   int      // options in the whole row
 }
 
 // editRows returns the four rows of a page for the selected chord.
-func editRows(page EditPage, m *Manifest, params map[string]string) []EditRow {
+func editRows(page EditPage, m *Manifest, params map[string]string, scroll int) []EditRow {
 	switch page {
 	case PageVoice:
 		return []EditRow{
 			{Key: "inv", Name: "INVERSION", Options: []string{"-3", "-2", "-1", "0", "1", "2", "3"},
 				Labels: []string{"-3", "-2", "-1", "0", "+1", "+2", "+3"}},
-			window("ccolour", "COLOUR", m.Params["ccolour"].Options, params["ccolour"]),
+			window("ccolour", "COLOUR", m.Params["ccolour"].Options, params["ccolour"], scroll),
 			{Key: "coct", Name: "OCTAVE", Options: []string{"1", "2", "3", "4", "5"}, Labels: []string{"1", "2", "3", "4", "5"}},
 			{Key: "cstrum", Name: "STRUM", Options: []string{"0", "10", "20", "35", "50", "65", "80", "100"},
 				Labels: []string{"0", "10", "20", "35", "50", "65", "80", "100"}},
 		}
 	case PageFeel:
 		return []EditRow{
-			window("rhythm", "RHYTHM", m.Params["rhythm"].Options, params["rhythm"]),
+			window("rhythm", "RHYTHM", m.Params["rhythm"].Options, params["rhythm"], scroll),
 			{Key: "cgate", Name: "GATE", Options: []string{"-50", "-35", "-20", "-10", "0", "10", "25", "50"},
 				Labels: []string{"-50", "-35", "-20", "-10", "0", "+10", "+25", "+50"}},
 			{Key: "cvel", Name: "VELOCITY", Options: []string{"-63", "-40", "-20", "-10", "0", "10", "20", "40"},
@@ -75,13 +77,14 @@ func editRows(page EditPage, m *Manifest, params map[string]string) []EditRow {
 		{Key: "len", Name: "LENGTH", Options: []string{"2", "4", "6", "8", "16", "24", "32", "64"},
 			Labels: []string{"1/4", "1/2", "3/4", "1", "2", "3", "4", "8"}},
 		{Key: "family", Name: "FAMILY", Options: m.Params["family"].Options, Labels: upper(m.Params["family"].Options)},
-		window("shape", "SHAPE", shapes, params["shape"]),
+		window("shape", "SHAPE", shapes, params["shape"], scroll),
 	}
 }
 
-// window is a list longer than eight, scrolled to keep the current value
-// on the row (Left/Right scroll it by hand).
-func window(key, name string, opts []string, cur string) EditRow {
+// window is a list longer than eight. scroll < 0 keeps the current value on
+// the row; Page Left/Right set scroll to show another eight (the page has
+// at most one such row).
+func window(key, name string, opts []string, cur string, scroll int) EditRow {
 	at := 0
 	for i, o := range opts {
 		if o == cur {
@@ -91,9 +94,25 @@ func window(key, name string, opts []string, cur string) EditRow {
 	start := 0
 	if len(opts) > 8 {
 		start = min(max(at-3, 0), len(opts)-8)
+		if scroll >= 0 {
+			start = min(scroll, len(opts)-8)
+		}
 	}
 	end := min(start+8, len(opts))
-	return EditRow{Key: key, Name: name, Options: opts[start:end], Labels: upper(opts[start:end])}
+	return EditRow{Key: key, Name: name, Options: opts[start:end], Labels: upper(opts[start:end]),
+		Start: start, Total: len(opts)}
+}
+
+// LongRow finds the page's row of more than eight options: its pad row
+// (2-5), where it starts, and how many there are. ok is false when the
+// page has none (Page Left/Right then have nothing to scroll).
+func LongRow(s Scene, page EditPage) (row, start, total int, ok bool) {
+	for r, er := range editRows(page, s.M, s.Params, s.Scroll) {
+		if er.Total > 8 {
+			return 2 + r, er.Start, er.Total, true
+		}
+	}
+	return 0, 0, 0, false
 }
 
 // familyShapes is the run of Chord Shape options that belongs to a family
@@ -157,7 +176,7 @@ func Pads(s Scene, page EditPage) [8][8]Pad {
 			cur["degree"] = "rest"
 		}
 	}
-	for r, er := range editRows(page, s.M, s.Params) {
+	for r, er := range editRows(page, s.M, s.Params, s.Scroll) {
 		hue := idx(rowHue[r])
 		for col := 0; col < 8; col++ {
 			pad := Pad{Color: off}
@@ -190,7 +209,7 @@ func Pads(s Scene, page EditPage) [8][8]Pad {
 func RowNames(s Scene, page EditPage) [8]string {
 	var n [8]string
 	n[0], n[1] = "CHORDS 1-8", "CHORDS 9-16"
-	for r, er := range editRows(page, s.M, s.Params) {
+	for r, er := range editRows(page, s.M, s.Params, s.Scroll) {
 		n[2+r] = er.Name
 	}
 	n[6], n[7] = "PATTERNS 1-8", "PATTERNS 9-16"

@@ -51,6 +51,7 @@ type Scene struct {
 	Toast   string  // a transient answer to something just done
 	Blink   bool    // the slow blink phase, for ARMED
 	Held    int     // chord index a pad is holding (auditioning), -1 none
+	Scroll  int     // start of the page's long editor row, -1 keeps the value in view
 }
 
 const (

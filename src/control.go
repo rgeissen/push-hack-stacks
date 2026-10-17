@@ -22,9 +22,13 @@ import (
 	"github.com/rgeissen/push-hack-stacks/surface"
 )
 
-// passToLive are the buttons Live keeps while Stacks owns the surface:
-// Play (which also stops) and Record -- the two Move lets through.
-var passToLive = []int{push3.CCPlay, push3.CCRecord}
+// passToLive are the controls Live keeps while Stacks owns the surface:
+// Play (which also stops) and Record -- the two Move lets through -- and
+// the ones you reach for while composing: Metronome, Tap Tempo, the tempo
+// knob (turn and press) and the master volume. All are CC 0-87, so they fit
+// push-display's pass bitmap.
+var passToLive = []int{push3.CCPlay, push3.CCRecord, push3.CCMetronome, push3.CCTapTempo,
+	push3.CCTempo, push3.CCTempoPress, push3.CCVolume}
 
 const (
 	holdToCopy   = 500 * time.Millisecond // a pattern pad held this long copies
@@ -45,6 +49,7 @@ type surfaceCtl struct {
 	// Control goroutine only.
 	shift, del, delUsed bool
 	help, pendingTake   bool // Shift + Help seen; take once both are up
+	pendingRelease      bool // Shift + Help while active; give back once both are up
 	acc                 [8]int
 	lastTrig            [8]time.Time
 	padAt               map[uint8]time.Time
@@ -195,6 +200,17 @@ func (s *surfaceCtl) handle(msg []byte) {
 		}
 		return
 	}
+	// Shift + Help closes as it opens, on the release.
+	if kind == 0xB0 && num == push3.CCHelp && val > 0 && s.shift {
+		s.pendingRelease = true
+	}
+	if s.pendingRelease && !s.shift && !s.help {
+		s.pendingRelease = false
+		if err := s.SetActive(false, -1); err != nil {
+			log.Printf("surface: release: %v", err)
+		}
+		return
+	}
 	if kind == 0xB0 && num == push3.CCShift {
 		return
 	}
@@ -257,7 +273,37 @@ func (s *surfaceCtl) cc(cc, val uint8) {
 
 	case cc >= push3.CCScene14 && cc <= push3.CCScene18:
 		if pressed {
-			s.scr.Update(func(l *look) { l.page = surface.EditPage(cc - push3.CCScene14) })
+			s.scr.Update(func(l *look) { l.page, l.scroll = surface.EditPage(cc-push3.CCScene14), -1 })
+		}
+
+	case cc == push3.CCDPadUp || cc == push3.CCDPadDown: // editor page, as Up/Down on Move
+		if pressed {
+			d := map[bool]int{true: -1, false: 1}[cc == push3.CCDPadUp]
+			s.scr.Update(func(l *look) {
+				l.page = surface.EditPage(clamp(int(l.page)+d, 0, len(surface.PageNames)-1))
+				l.scroll = -1
+			})
+		}
+
+	case cc == push3.CCDPadLeft || cc == push3.CCDPadRight: // chord, as the jog
+		if pressed {
+			s.step("sel", map[bool]int{true: -1, false: 1}[cc == push3.CCDPadLeft])
+		}
+
+	case cc == push3.CCPageLeft || cc == push3.CCPageRight: // scroll the page's long row
+		if pressed {
+			params, _ := s.eng.Snapshot()
+			sc := surface.Scene{M: s.man, Params: params, Tab: l.tab, Held: -1, Scroll: l.scroll}
+			if _, start, total, ok := surface.LongRow(sc, l.page); ok {
+				d := map[bool]int{true: -8, false: 8}[cc == push3.CCPageLeft]
+				next := clamp(start+d, 0, total-8)
+				s.scr.Update(func(l *look) { l.scroll = next })
+			}
+		}
+
+	case cc == push3.CCScale: // Key and Scale live on MAIN
+		if pressed {
+			s.scr.Update(func(l *look) { l.tab = 0 })
 		}
 
 	case cc == push3.CCDelete:
@@ -366,7 +412,7 @@ func (s *surfaceCtl) note(n, vel uint8) {
 		}
 		l := s.scr.Look()
 		params, _ := s.eng.Snapshot()
-		g := surface.Pads(surface.Scene{M: s.man, Params: params, Tab: l.tab, Held: -1}, l.page)
+		g := surface.Pads(surface.Scene{M: s.man, Params: params, Tab: l.tab, Held: -1, Scroll: l.scroll}, l.page)
 		if p := g[row][col]; p.Key != "" && p.Value != "" {
 			s.set(p.Key, p.Value)
 		}
@@ -495,8 +541,13 @@ func (s *surfaceCtl) count() int {
 
 // ---- LEDs ----------------------------------------------------------------
 
-// paint lights the pads and buttons for the frame being drawn. Runs on the
-// screen goroutine; sends only what changed since the last frame.
+// paint lights the pads and every button for the frame being drawn. Runs
+// on the screen goroutine; sends only what changed since the last frame.
+//
+// EVERY button gets a value: a button with a meaning in Stacks is lit, the
+// rest are switched off -- left alone they kept whatever Live last showed,
+// and a dead button that looks alive is a lie. The buttons Live keeps
+// (passToLive) are not touched, so Live's own lights show there.
 func (s *surfaceCtl) paint(sc surface.Scene, page surface.EditPage) {
 	s.mu.Lock()
 	c, push, active := s.c, s.push, s.active
@@ -510,6 +561,7 @@ func (s *surfaceCtl) paint(sc surface.Scene, page surface.EditPage) {
 	}
 	idx := func(name string) uint8 { i, _ := push3.ColorByName(name); return i }
 	amber, white := idx("amber"), idx("white_btn")
+	const lit = 127 // white-LED buttons: the value is brightness
 
 	g := surface.Pads(sc, page)
 	for row := 0; row < 8; row++ {
@@ -518,39 +570,61 @@ func (s *surfaceCtl) paint(sc surface.Scene, page surface.EditPage) {
 			s.led(c, push, true, n, g[row][col].Color)
 		}
 	}
+
+	want := map[uint8]uint8{}
+	for _, cc := range push3.LEDButtons {
+		want[cc] = 0
+	}
+	for _, cc := range passToLive {
+		delete(want, uint8(cc))
+	}
 	for i := 0; i < 8; i++ { // tabs: the bank you are on is amber
-		v := white
-		if i == sc.Tab {
-			v = amber
-		}
-		s.led(c, push, false, uint8(push3.CCScreenTop1+i), v)
+		want[uint8(push3.CCScreenTop1+i)] = map[bool]uint8{true: amber, false: white}[i == sc.Tab]
 	}
 	acts := surface.Actions(sc.Tab)
 	params, _ := s.eng.Snapshot()
 	prog, _ := surface.ParseProg(params["prog"])
-	for i := 0; i < 8; i++ {
-		v := uint8(0)
-		if i < len(acts) && acts[i].Label != "" {
-			v = white
-			if acts[i].Lit != nil && acts[i].Lit(params, prog) {
-				v = amber
-			}
+	for i, a := range acts {
+		if a.Label == "" {
+			continue
 		}
-		s.led(c, push, false, uint8(push3.CCScreenBot1+i), v)
+		v := white
+		if a.Lit != nil && a.Lit(params, prog) {
+			v = amber
+		}
+		want[uint8(push3.CCScreenBot1+i)] = v
 	}
-	for i := 0; i < 8; i++ { // scene buttons: the editor page
-		v := uint8(0)
-		if i < len(surface.PageNames) {
-			v = white
-			if surface.EditPage(i) == page {
-				v = amber
-			}
-		}
-		s.led(c, push, false, uint8(push3.CCScene14+i), v)
+	for i := range surface.PageNames { // scene buttons: the editor page
+		want[uint8(push3.CCScene14+i)] = map[bool]uint8{true: amber, false: white}[surface.EditPage(i) == page]
 	}
 	for _, cc := range []uint8{push3.CCAdd, push3.CCDelete, push3.CCDuplicate, push3.CCDoubleLoop,
-		push3.CCMute, push3.CCUndo, push3.CCNew, push3.CCCapture, push3.CCOctaveUp, push3.CCOctaveDown} {
-		s.led(c, push, false, cc, 127) // white buttons: the value is brightness
+		push3.CCMute, push3.CCUndo, push3.CCNew, push3.CCCapture, push3.CCOctaveUp, push3.CCOctaveDown,
+		push3.CCShift, push3.CCHelp, push3.CCScale} {
+		want[cc] = lit
+	}
+	// Arrows light only where they can go.
+	if page > 0 {
+		want[push3.CCDPadUp] = lit
+	}
+	if int(page) < len(surface.PageNames)-1 {
+		want[push3.CCDPadDown] = lit
+	}
+	if prog.Sel > 1 {
+		want[push3.CCDPadLeft] = lit
+	}
+	if prog.Sel < len(prog.Chords) {
+		want[push3.CCDPadRight] = lit
+	}
+	if _, start, total, ok := surface.LongRow(sc, page); ok {
+		if start > 0 {
+			want[push3.CCPageLeft] = lit
+		}
+		if start+8 < total {
+			want[push3.CCPageRight] = lit
+		}
+	}
+	for cc, v := range want {
+		s.led(c, push, false, cc, v)
 	}
 }
 

@@ -1,6 +1,7 @@
 package surface
 
 import (
+	"os"
 	"reflect"
 	"testing"
 )
@@ -147,5 +148,40 @@ func TestSounding(t *testing.T) {
 	running, _ := ParseProg("v13|4|1|2|8|5ad|9|32|1|4|120|0|0|A,A3,0,8,0,100,0,1,57:100")
 	if got := running.Sounding(-1); got != 2 {
 		t.Errorf("running: sounding %d, want 2", got)
+	}
+}
+
+// The FEEL page's rhythm row has 35 options: by default it follows the
+// value; Page Left/Right set a start, clamped so the row stays full.
+func TestLongRowScroll(t *testing.T) {
+	raw, err := os.ReadFile("../upstream/stacks/src/module.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := ParseManifest(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := map[string]string{"rhythm": "bossa", "prog": axisProg}
+	follow := Scene{M: m, Params: params, Scroll: -1}
+	row, start, total, ok := LongRow(follow, PageFeel)
+	if !ok || row != 2 || total != 35 {
+		t.Fatalf("FEEL long row = row %d total %d ok %v, want row 2 of 35", row, total, ok)
+	}
+	if start != 9 { // bossa is option 12; three before it stay on the row
+		t.Errorf("following bossa: start %d, want 9", start)
+	}
+	if _, start, _, _ := LongRow(Scene{M: m, Params: params, Scroll: 8}, PageFeel); start != 8 {
+		t.Errorf("scrolled to 8: start %d", start)
+	}
+	if _, start, _, _ := LongRow(Scene{M: m, Params: params, Scroll: 99}, PageFeel); start != 27 {
+		t.Errorf("scrolled past the end: start %d, want 27 (35-8)", start)
+	}
+	g := Pads(Scene{M: m, Params: params, Scroll: 8, Held: -1}, PageFeel)
+	if g[2][0].Value != "tresillo" { // rhythm option 8
+		t.Errorf("first rhythm pad at scroll 8 = %q, want tresillo", g[2][0].Value)
+	}
+	if _, _, _, ok := LongRow(Scene{M: m, Params: map[string]string{"family": "triad"}, Scroll: -1}, PageWrite); ok {
+		t.Error("a triad's six shapes fit one row; WRITE has no long row then")
 	}
 }
