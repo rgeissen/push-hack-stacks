@@ -176,13 +176,18 @@ func Pads(s Scene, page EditPage) [8][8]Pad {
 			cur["degree"] = "rest"
 		}
 	}
+	auto := ok && p.InvAuto(p.Sel-1, s.Params["grouping"])
 	for r, er := range editRows(page, s.M, s.Params, s.Scroll) {
 		hue := idx(rowHue[r])
+		grey := er.Key == "inv" && auto // voice leading picks it: no value is "on"
+		if grey {
+			hue = idx("gray_mauve")
+		}
 		for col := 0; col < 8; col++ {
 			pad := Pad{Color: off}
 			if col < len(er.Options) {
 				pad = Pad{Color: hue, Label: er.Labels[col], Key: er.Key, Value: er.Options[col]}
-				if er.Options[col] == cur[er.Key] {
+				if er.Options[col] == cur[er.Key] && !grey {
 					pad.Color = focus
 				}
 			}
@@ -211,6 +216,9 @@ func RowNames(s Scene, page EditPage) [8]string {
 	n[0], n[1] = "CHORDS 1-8", "CHORDS 9-16"
 	for r, er := range editRows(page, s.M, s.Params, s.Scroll) {
 		n[2+r] = er.Name
+		if er.Key == "inv" && invAuto(s) {
+			n[2+r] += " AUTO"
+		}
 	}
 	n[6], n[7] = "PATTERNS 1-8", "PATTERNS 9-16"
 	return n

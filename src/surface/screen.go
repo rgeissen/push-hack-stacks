@@ -45,15 +45,16 @@ const (
 type Scene struct {
 	M       *Manifest
 	Params  map[string]string
-	Tab     int      // index into M.Banks, or TabPatterns
-	Touched int      // encoder being touched, -1 none
-	Head    float64  // playhead in units, interpolated between reads
-	Toast   string   // a transient answer to something just done
-	Blink   bool     // the slow blink phase, for ARMED
-	Held    int      // chord index a pad is holding (auditioning), -1 none
-	Scroll  int      // start of the page's long editor row, -1 keeps the value in view
-	Legend  bool     // a scene button is held: draw the pad map of Page instead
-	Page    EditPage // the editor page the pads show
+	Tab     int       // index into M.Banks, or TabPatterns
+	Touched int       // encoder being touched, -1 none
+	Head    float64   // playhead in units, interpolated between reads
+	Toast   string    // a transient answer to something just done
+	Blink   bool      // the slow blink phase, for ARMED
+	Held    int       // chord index a pad is holding (auditioning), -1 none
+	Scroll  int       // start of the page's long editor row, -1 keeps the value in view
+	Legend  bool      // a scene button is held: draw the pad map of Page instead
+	Page    EditPage  // the editor page the pads show
+	Lanes   LaneRange // the staff's window, from FitLanes; zero fits it afresh
 }
 
 const (
@@ -160,6 +161,13 @@ func drawEncoders(img *image.NRGBA, s Scene) {
 		if p.Bipolar() && !strings.HasPrefix(val, "-") && val != "0" && val != "" {
 			v = "+" + v
 		}
+		if key == "inv" && invAuto(s) {
+			// Voice leading picks the inversion: say so, and keep the stored
+			// value small beside it (it returns if grouping leaves dynamic).
+			text.DrawScaled(img, x+8, encY+31, 2, "AUTO", Dim)
+			right(img, x+ColW-8, encY+31, v, Dim)
+			continue
+		}
 		if text.WidthScaled(v, 2) <= ColW-16 {
 			text.DrawScaled(img, x+8, encY+31, 2, v, Bright)
 		} else {
@@ -217,7 +225,63 @@ type staff struct {
 	top     int
 }
 
-func newStaff(p Prog, lanes string) staff {
+// LaneRange is the staff's window, in lanes (degrees), and what those
+// degrees were counted against. Zero means "fit to the notes".
+type LaneRange struct {
+	Lo, Hi    int
+	Key, Mask int
+	Mode      string
+}
+
+// FitLanes keeps the staff still. Fitting every frame meant changing one
+// chord (its inversion, say) rescaled the lanes under all the others --
+// they moved though nothing about them had. So the window only grows, to
+// take in a note that leaves it, and is fitted afresh only when it would
+// hold more than an octave of nothing, or the key, scale or lane mode
+// change. A sweep of one chord's inversions settles after one pass.
+func FitLanes(p Prog, mode string, prev LaneRange) LaneRange {
+	st := lanesFor(p, mode)
+	lo, hi := 1<<30, -1
+	for _, c := range p.Chords {
+		for _, n := range c.Notes {
+			lo, hi = min(lo, st.degree[n]), max(hi, st.degree[n])
+		}
+	}
+	if hi < 0 {
+		lo, hi = st.degree[57], st.degree[69]
+	}
+	lo, hi = lo-1, hi+1 // a lane of air either side
+	octave := st.degree[72] - st.degree[60]
+	fit := LaneRange{Lo: lo, Hi: hi, Key: p.Key, Mask: p.ScaleMask, Mode: mode}
+	if prev.Hi <= prev.Lo || prev.Key != p.Key || prev.Mask != p.ScaleMask || prev.Mode != mode {
+		return fit
+	}
+	// Grow to take the new notes in, keeping what is there: a refit to the
+	// notes alone would drop the room a sweep had already made, and the
+	// sweep back would jump the lanes again.
+	grown := prev
+	grown.Lo, grown.Hi = min(prev.Lo, lo), max(prev.Hi, hi)
+	if (grown.Hi-grown.Lo)-(hi-lo) > octave {
+		return fit // more than an octave of nothing: tighten
+	}
+	return grown
+}
+
+func newStaff(p Prog, lanes string, win LaneRange) staff {
+	st := lanesFor(p, lanes)
+	if win.Hi <= win.Lo || win.Key != p.Key || win.Mask != p.ScaleMask || win.Mode != lanes {
+		win = FitLanes(p, lanes, LaneRange{})
+	}
+	lo, hi := win.Lo, win.Hi
+	h := laneBot - laneTop
+	st.step = min(max(h/max(hi-lo, 1), 2), 7)
+	st.lo, st.hi = lo, hi
+	st.top = laneTop + (h-st.step*(hi-lo))/2
+	return st
+}
+
+// lanesFor numbers the lanes: every MIDI note's degree, and which are tonic.
+func lanesFor(p Prog, lanes string) staff {
 	mask, key := p.ScaleMask, p.Key
 	if lanes == "diatonic" || mask == 0 {
 		mask, key = 0xAB5, 0 // the seven letter names
@@ -236,20 +300,6 @@ func newStaff(p Prog, lanes string) staff {
 			st.tonic[st.degree[n]] = true
 		}
 	}
-	lo, hi := 1<<30, -1
-	for _, c := range p.Chords {
-		for _, n := range c.Notes {
-			lo, hi = min(lo, st.degree[n]), max(hi, st.degree[n])
-		}
-	}
-	if hi < 0 {
-		lo, hi = st.degree[57], st.degree[69]
-	}
-	lo, hi = lo-1, hi+1 // a lane of air either side
-	h := laneBot - laneTop
-	st.step = min(max(h/max(hi-lo, 1), 2), 7)
-	st.lo, st.hi = lo, hi
-	st.top = laneTop + (h-st.step*(hi-lo))/2
 	return st
 }
 
@@ -313,7 +363,7 @@ func drawStaff(img *image.NRGBA, s Scene, p Prog) {
 	if clip < 1 || music < 1 {
 		return
 	}
-	st := newStaff(p, s.Params["lanes"])
+	st := newStaff(p, s.Params["lanes"], s.Lanes)
 	starts := p.Starts()
 	edges := Spans(p)
 
@@ -683,4 +733,10 @@ func pad2(n int) string {
 		return "0" + itoa(n)
 	}
 	return itoa(n)
+}
+
+// invAuto: the selected chord's inversion is picked by voice leading.
+func invAuto(s Scene) bool {
+	p, ok := ParseProg(s.Params["prog"])
+	return ok && p.InvAuto(p.Sel-1, s.Params["grouping"])
 }

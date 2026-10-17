@@ -167,3 +167,14 @@ func Hits(c Chord, phaseU, unitsPerBar int) []float64 {
 	}
 	return xs
 }
+
+// InvAuto reports a chord whose inversion Stacks overrides: under a
+// "dynamic" grouping (dynamic, dyn +1oct, dyn +2oct) each chord is voiced
+// to move least from the one before, trying every rotation, so the stored
+// inversion stops mattering -- seen on device as detents that change
+// nothing. `prog` leads each chord from the one before it unless that one
+// is a rest, so the first chord, and a chord after a rest, keep theirs.
+// i is 0-based.
+func (p Prog) InvAuto(i int, grouping string) bool {
+	return strings.HasPrefix(grouping, "dyn") && i >= 1 && i < len(p.Chords) && !p.Chords[i-1].Rest()
+}

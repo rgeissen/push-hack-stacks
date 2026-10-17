@@ -23,6 +23,11 @@ browser.
 - **Hold a scene button** to see on the screen what every pad row on that
   page does. Let go and the screen goes back.
 - **Top two pad rows** are the 16 patterns.
+- **Inversion shows AUTO** when Voice Grouping is a "dyn" mode. Then
+  Stacks picks each chord's inversion itself, so the chord moves as little
+  as possible from the chord before. The first chord, and a chord after a
+  rest, keep their own inversion. The value you set is kept and comes back
+  if you change grouping.
 
 ## What it does
 
