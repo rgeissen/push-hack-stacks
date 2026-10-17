@@ -99,11 +99,11 @@ chord, the same way a keyboard does on Move.
   `deps:`.
 - For listen mode and Shift + Scale: Browser Bridge active in Live, 0.4 or
   later for listening, 0.3 or later for the scale
-  ([push-hack-browser-bridge#3](https://github.com/federico-pepe/push-hack-browser-bridge/pull/3)
-  and the listen PR after it), and a push-manager with `/api/live/scale` and
-  `/api/live/listen`
-  ([#36](https://github.com/federico-pepe/ableton-push-hack/pull/36) and
-  the listen PR after it).
+  ([push-hack-browser-bridge#3](https://github.com/federico-pepe/push-hack-browser-bridge/pull/3),
+  [#4](https://github.com/federico-pepe/push-hack-browser-bridge/pull/4)),
+  and a push-manager with `/api/live/scale` and `/api/live/listen`
+  ([#36](https://github.com/federico-pepe/ableton-push-hack/pull/36),
+  [#37](https://github.com/federico-pepe/ableton-push-hack/pull/37)).
 - Not supported yet: Read Clip and Read Track. On Move they read the set
   file, and Live's sets are a different format. They will come through
   Browser Bridge.

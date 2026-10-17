@@ -1,8 +1,8 @@
 {
   "id": "stacks",
   "name": "Stacks",
-  "version": "0.1.1",
-  "description": "Chord-progression tool, ported from the Schwung module for Ableton Move. Plays chords into Live on the selected track, follows Live's MIDI clock, and runs on Push's screen, pads and buttons (Shift + Help). The Push surface needs push-manager and push-display from a Push Hack release with pass-through buttons and raw frames; without them Stacks still plays and its browser panel works.",
+  "version": "0.2.0",
+  "description": "Chord-progression tool, ported from the Schwung module for Ableton Move. Plays chords into Live on the selected track, follows Live's MIDI clock, runs on Push's screen, pads and buttons (Shift + Help), and in listen mode names the chord you play on the screen. The Push surface needs push-manager and push-display from a Push Hack release with pass-through buttons and raw frames; without them Stacks still plays and its browser panel works.",
   "author": "rgeissen",
   "binary": "stacks",
   "port": 7711,
