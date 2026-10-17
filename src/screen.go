@@ -31,6 +31,12 @@ const (
 	ownPortName = "\"Stacks In\""
 )
 
+// holdState is the held pad's audition: which chord, and when it began.
+type holdState struct {
+	chord int
+	at    time.Time
+}
+
 // look is what the hardware selects and the screen and pads draw: shared
 // by the control surface (which writes it) and the display (which reads it).
 type look struct {
@@ -55,7 +61,8 @@ type screen struct {
 	last   uint64                                // hash of the last frame sent
 	pos    int                                   // last whole-unit position, for interpolation
 	posAt  time.Time
-	synced bool // Live is connected to Stacks In
+	hold   holdState // the held pad's audition, for its own playhead
+	synced bool      // Live is connected to Stacks In
 	stats  struct {
 		sent      int
 		total, mx time.Duration
@@ -64,7 +71,7 @@ type screen struct {
 }
 
 func newScreen(eng *Engine, man *surface.Manifest) *screen {
-	return &screen{eng: eng, man: man, pm: pmclient.New("http://127.0.0.1:7701"),
+	return &screen{hold: holdState{chord: -1}, eng: eng, man: man, pm: pmclient.New("http://127.0.0.1:7701"),
 		look: look{tab: 2, touched: -1, held: -1}, synced: true}
 }
 
@@ -194,10 +201,17 @@ func (s *screen) frame(img *image.NRGBA, now time.Time) {
 		return
 	}
 	params["prog"] = prog
-	head := s.head(rui, prog, now)
-
 	s.mu.Lock()
 	l, synced := s.look, s.synced
+	s.mu.Unlock()
+	head := s.head(rui, prog, now)
+	if l.held >= 0 {
+		head = s.heldHead(l.held, rui, prog, now)
+	} else {
+		s.hold.chord = -1
+	}
+
+	s.mu.Lock()
 	if l.toast != "" && now.Sub(l.toastAt) > toastFor {
 		s.look.toast, l.toast = "", ""
 	}
@@ -240,6 +254,28 @@ func (s *screen) frame(img *image.NRGBA, now time.Time) {
 		}
 		st.sent, st.total, st.mx, st.next = 0, 0, 0, now.Add(time.Minute)
 	}
+}
+
+// heldHead puts the playhead inside the chord a pad is holding: Stacks'
+// clock runs during the audition (one unit per eighth of a bar, measured)
+// but reports no transport, and its position is the global clock. So the
+// head starts at the chord's onset when the pad goes down and sweeps its
+// length, wrapping -- the chord's own figure repeating from the press.
+func (s *screen) heldHead(chord int, rui, prog string, now time.Time) float64 {
+	f := strings.Split(rui, ":") // rev:on:pos:bpm[:devms]
+	p, ok := surface.ParseProg(prog)
+	if len(f) < 4 || !ok || chord >= len(p.Chords) {
+		return 0
+	}
+	bpm := atoiSafe(f[3])
+	if s.hold.chord != chord {
+		s.hold.chord, s.hold.at = chord, now
+	}
+	unitsPerSec := float64(max(bpm, 1)) / 60 * float64(p.StepUnits) / 4
+	elapsed := now.Sub(s.hold.at).Seconds() * unitsPerSec
+	c := p.Chords[chord]
+	local := elapsed - float64(int(elapsed)/c.Len*c.Len)
+	return float64(p.Starts()[chord]) + local
 }
 
 // head interpolates the playhead between whole-unit position reads, so it

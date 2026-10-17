@@ -356,7 +356,7 @@ func drawStaff(img *image.NRGBA, s Scene, p Prog) {
 		right(img, W-6, numRow, loops, Dim)
 	}
 	// The playhead, at its place in the phrase.
-	if p.Running || s.Head > 0 {
+	if p.Running || s.Held >= 0 || s.Head > 0 {
 		u := s.Head
 		for u >= float64(music) {
 			u -= float64(music)
