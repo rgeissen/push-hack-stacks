@@ -124,6 +124,12 @@ func (s *surfaceCtl) SetActive(on bool, tab int) error {
 	s.mu.Lock()
 	s.active = on
 	s.mu.Unlock()
+	// Closed, Stacks is PARKED: the DSP's own rule from Move (Back parks
+	// the tool) -- Run goes off, so it stops playing along with Live's
+	// transport on whatever track is selected, unless a stamp is armed or
+	// under way; opening gives Run back. Reported on device: "whenever
+	// Stacks is closed it still plays the Stacks chords when I hit play".
+	s.set("parked", map[bool]string{true: "off", false: "on"}[on])
 	if on {
 		s.scr.Update(func(*look) {}) // force a frame, and with it a full LED paint
 	}

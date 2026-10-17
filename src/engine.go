@@ -90,9 +90,15 @@ func (e *Engine) Run(ctx context.Context, moduleDir, config string, out *notesOu
 	e.ready = true
 	e.mu.Unlock()
 	defer func() {
+		// Unpark before the save, or a closed Stacks saves Run as the park
+		// left it (off) and the next start has lost the user's Run.
+		inst.SetParam("parked", "off")
 		inst.Destroy() // Stacks saves state synchronously here
 		out.allOff()
 	}()
+	// Stacks starts with the surface closed: parked, as SetActive(false)
+	// leaves it. Applied before the first block, so nothing plays first.
+	inst.SetParam("parked", "on")
 
 	next := time.Now()
 	nextPoll := next
