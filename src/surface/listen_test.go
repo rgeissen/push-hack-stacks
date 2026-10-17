@@ -1,6 +1,7 @@
 package surface
 
 import (
+	"bytes"
 	"image"
 	"testing"
 	"time"
@@ -91,5 +92,18 @@ func TestToneNameFollowsTheChord(t *testing.T) {
 		if got := toneName(tc.chord, tc.semis); got != tc.want {
 			t.Errorf("%s, %d semitones: %q, want %q", tc.chord, tc.semis, got, tc.want)
 		}
+	}
+}
+
+// The listen screen's way out is the one that works: under Push Hack Home
+// Shift + Help opens Home; it said BACK TO LIVE, the 0.2 cycle's.
+func TestListenHeadSaysTheWayOut(t *testing.T) {
+	draw := func(leave string) []byte {
+		img := image.NewNRGBA(image.Rect(0, 0, W, H))
+		RenderListen(img, ListenScene{Now: time.Now(), Root: -1, Leave: leave})
+		return img.Pix
+	}
+	if bytes.Equal(draw(""), draw("SHIFT + HELP: PUSH HACK HOME")) {
+		t.Fatal("the hint does not follow Leave")
 	}
 }

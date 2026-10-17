@@ -66,7 +66,16 @@ type follower struct {
 
 	mu   sync.Mutex
 	on   bool
+	gen  int    // bumped by every Set: a Sync begun before one is stale
 	last string // the last state logged and shown
+
+	// apply is held while a Sync writes Key and Scale, and by Set: a turn
+	// of Stacks' own Key or Scale lands after a Sync's write, never under
+	// it. Sync read Push's scale (a round trip into Live), then wrote it
+	// with no second look: a turn during the read switched following off
+	// and was overwritten anyway (found 2026-10-17: "YOU TURNED SCALE",
+	// then "Stacks now C Major, from Push" in the same second).
+	apply sync.Mutex
 }
 
 func newFollower(pm interface {
@@ -92,10 +101,13 @@ func (f *follower) On() bool {
 
 // Set switches following and saves the choice; why goes on the screen.
 func (f *follower) Set(on bool, why string) {
+	f.apply.Lock()
 	f.mu.Lock()
 	changed := f.on != on
 	f.on, f.last = on, ""
+	f.gen++
 	f.mu.Unlock()
+	f.apply.Unlock()
 	if !changed {
 		return
 	}
@@ -133,7 +145,10 @@ func (f *follower) note(state, show string) {
 
 // Sync reads Push's scale once and brings Stacks' Key and Scale to it.
 func (f *follower) Sync() {
-	if !f.On() {
+	f.mu.Lock()
+	on, gen := f.on, f.gen
+	f.mu.Unlock()
+	if !on {
 		return
 	}
 	sc, err := f.pm.LiveScale()
@@ -157,6 +172,14 @@ func (f *follower) Sync() {
 		scale = f.ps.Get("scale")
 	} else {
 		f.note("following "+key+" "+scale, "")
+	}
+	f.apply.Lock()
+	defer f.apply.Unlock()
+	f.mu.Lock()
+	stale := !f.on || f.gen != gen
+	f.mu.Unlock()
+	if stale { // switched while Push was asked: the switch wins
+		return
 	}
 	moved := false
 	if f.ps.Get("scale") != scale {

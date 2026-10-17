@@ -68,6 +68,7 @@ type ListenScene struct {
 	KeyName  string // "A MINOR": the key, said while nothing is played
 	Source   string
 	Status   string // what is wrong, if anything: shown instead of the hint
+	Leave    string // the way out, top right; "" is the old cycle's "SHIFT + HELP: BACK TO LIVE"
 }
 
 // KeyWindow keeps the keyboard still: four octaves from a C, moved by
@@ -157,7 +158,11 @@ func drawListenHead(img *image.NRGBA, s ListenScene) {
 		src = "FROM " + strings.ToUpper(s.Source)
 	}
 	text.Draw(img, 72, 11, text.Truncate(src, 40), Ink)
-	right(img, W-8, 11, "SHIFT + HELP: BACK TO LIVE", Dim)
+	leave := s.Leave
+	if leave == "" {
+		leave = "SHIFT + HELP: BACK TO LIVE"
+	}
+	right(img, W-8, 11, leave, Dim)
 	gfx.FillRect(img, 0, 14, W, 1, Rule)
 }
 

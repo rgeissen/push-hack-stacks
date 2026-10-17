@@ -152,7 +152,15 @@ func routes(e *Engine, broker *sse.Broker[map[string]string], ctl *surfaceCtl) h
 	})
 	mux.HandleFunc("GET /api/screen", func(w http.ResponseWriter, r *http.Request) {
 		on, t := ctl.scr.State()
-		httpx.JSON(w, map[string]any{"on": on, "tab": t, "mode": modeNames[ctl.mode()]})
+		out := map[string]any{"on": on, "tab": t, "mode": modeNames[ctl.mode()]}
+		for k, v := range ctl.View() {
+			out[k] = v
+		}
+		httpx.JSON(w, out)
+	})
+	// What the pads and buttons were last sent, for tests.
+	mux.HandleFunc("GET /api/leds", func(w http.ResponseWriter, r *http.Request) {
+		httpx.JSON(w, ctl.LEDs())
 	})
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {

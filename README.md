@@ -133,6 +133,13 @@ make build                      # ./stacks, static linux/amd64
 The log is `/data/push-hack/logs/stacks.log` on the Push. Once a minute it
 prints how late the block timer woke, so timing is measured, not assumed.
 
+Two read-only routes are there for testing what Push shows:
+`GET /api/screen` returns the mode, the tab, the editor page, whether a
+pad map is held up (`legend`), an armed slot action (`pat_mode`), the held
+chord pad and the toast; `GET /api/leds` returns the last colour sent to
+each pad (`pads`, eight rows, the bottom row first) and each button
+(`buttons`, by CC).
+
 ### How it is built
 
 - `src/upstream/stacks/` is Stacks' own code, copied from schwung-stacks at

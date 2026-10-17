@@ -21,6 +21,10 @@ as a push-hack catalog hack. Framework rules live in
   links with `-extldflags -static`; a dynamic cgo binary fails to exec.
 - **No `/dev/snd` before `alsaseq.WaitForBootSettle()`** (USB-A wedge).
 - **Display: through push-manager only** (`core/pmclient`), never shm.
+  Make every client with `pmClient()` (control.go): it names the app
+  (`X-Push-Hack-App: stacks`). While Stacks owns the surface push-manager
+  refuses (409) a client that does not -- the screen's did not, and under
+  Push Hack Home Stacks' screen never showed while it lit the pads.
 - **Strings drawn on Push's screen are ASCII only** (`core/gfx/text`).
 
 ## Measured on device (2026-10-16, Live 12.4.15b7)

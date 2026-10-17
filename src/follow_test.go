@@ -117,3 +117,35 @@ func TestStacksScaleByIntervals(t *testing.T) {
 		t.Error("a scale Stacks lacks matched something")
 	}
 }
+
+// slowPush answers LiveScale only when told to: the round trip into Live.
+type slowPush struct {
+	asked, answer chan struct{}
+	sc            pmclient.Scale
+}
+
+func (s *slowPush) LiveScale() (pmclient.Scale, error) {
+	s.asked <- struct{}{}
+	<-s.answer
+	return s.sc, nil
+}
+
+// A turn of Stacks' own Scale while Push's scale is being read wins: the
+// read must not land after it. It did, and undid the turn.
+func TestFollowerTurnDuringReadWins(t *testing.T) {
+	push := &slowPush{asked: make(chan struct{}), answer: make(chan struct{}),
+		sc: pmclient.Scale{Supported: true, Root: 0, Name: "Major", Intervals: []int{0, 2, 4, 5, 7, 9, 11}}}
+	ps := mapParams{"key": "C", "scale": "Major"}
+	f := newFollower(push, ps, t.TempDir(), nil)
+	f.on = true
+	done := make(chan struct{})
+	go func() { f.Sync(); close(done) }()
+	<-push.asked
+	f.Set(false, ": YOU TURNED SCALE") // the turn: following off, then the new value
+	ps.Set("scale", "Minor")
+	close(push.answer)
+	<-done
+	if ps["scale"] != "Minor" {
+		t.Fatalf("the read in flight undid the turn: scale %s", ps["scale"])
+	}
+}

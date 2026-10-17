@@ -122,7 +122,7 @@ func main() {
 	limg := image.NewNRGBA(image.Rect(0, 0, surface.W, surface.H))
 	surface.RenderListen(limg, surface.ListenScene{Now: t0.Add(3 * time.Second), Notes: held, Name: "Cmaj7",
 		NameAt: t0, Root: 0, Bass: 0, Known: true, Omit: []int{7}, Key: 9, Mask: 0x5AD,
-		KeysLo: 48, Source: "1-Grand Piano", KeyName: "A MINOR"})
+		KeysLo: 48, Source: "1-Grand Piano", KeyName: "A MINOR", Leave: "SHIFT + HELP: PUSH HACK HOME"})
 	var lbuf bytes.Buffer
 	if err := png.Encode(&lbuf, limg); err != nil {
 		log.Fatal(err)

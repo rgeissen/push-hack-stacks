@@ -21,7 +21,6 @@ import (
 	"github.com/federico-pepe/ableton-push-hack/core/alsaseq"
 	"github.com/federico-pepe/ableton-push-hack/core/hackcfg"
 	"github.com/federico-pepe/ableton-push-hack/core/httpx"
-	"github.com/federico-pepe/ableton-push-hack/core/pmclient"
 	"github.com/federico-pepe/ableton-push-hack/core/sse"
 	"github.com/rgeissen/push-hack-stacks/surface"
 )
@@ -65,12 +64,12 @@ func main() {
 	go ctl.deps.run(ctx.Done())
 	go ctl.session(ctx.Done())    // Push Hack Home: focus and blur
 	go ctl.statusLoop(ctx.Done()) // the card in Home
-	ctl.follow = newFollower(pmclient.New("http://127.0.0.1:7701"), engineParams{eng}, *dataDir, scr.Toast)
+	ctl.follow = newFollower(pmClient(), engineParams{eng}, *dataDir, scr.Toast)
 	scr.follows = ctl.follow.On
 	go ctl.follow.run(ctx.Done())
 	heard := newListenState()
 	scr.listen = heard
-	ctl.listen = &listenTrack{pm: pmclient.New("http://127.0.0.1:7701"), st: heard}
+	ctl.listen = &listenTrack{pm: pmClient(), st: heard}
 	go ctl.listen.run(ctx.Done())
 
 	// HTTP first: the panel answers during the boot-settle wait.

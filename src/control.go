@@ -74,6 +74,9 @@ type surfaceCtl struct {
 	// Screen goroutine only (paint).
 	leds     map[uint16]uint8 // kind<<8|number -> value last sent
 	ledsFull time.Time        // when every LED was last re-sent
+
+	ledMu sync.Mutex
+	shown map[uint16]uint8 // what each LED last got, for GET /api/leds
 }
 
 // ledRefresh re-sends every LED this often. Push3 keeps writing LEDs while
@@ -83,8 +86,7 @@ type surfaceCtl struct {
 const ledRefresh = time.Second
 
 func newSurface(eng *Engine, scr *screen, man *surface.Manifest) *surfaceCtl {
-	pm := pmclient.New("http://127.0.0.1:7701")
-	pm.App = "stacks" // hack.json's id: push-manager lets Stacks' frames through while it owns the surface
+	pm := pmClient()
 	s := &surfaceCtl{eng: eng, scr: scr, man: man, pm: pm, deps: newDeps(pm),
 		padAt: map[uint8]time.Time{}}
 	scr.pads = s.paint
@@ -325,6 +327,32 @@ func (s *surfaceCtl) statusLoop(done <-chan struct{}) {
 			last = lines
 		}
 	}
+}
+
+// LEDs is the last value sent to each pad (row 0 at the bottom) and
+// button (by CC), for tests: what the hardware shows, not what it should.
+func (s *surfaceCtl) LEDs() map[string]any {
+	s.ledMu.Lock()
+	defer s.ledMu.Unlock()
+	var pads [8][8]int
+	ccs := map[string]int{}
+	for k, v := range s.shown {
+		n := int(k & 0xFF)
+		if k&(1<<8) == 0 {
+			ccs[strconv.Itoa(n)] = int(v)
+		} else if n >= push3.PadNoteMin && n <= push3.PadNoteMax {
+			pads[(n-push3.PadNoteMin)/8][(n-push3.PadNoteMin)%8] = int(v)
+		}
+	}
+	return map[string]any{"active": s.isActive(), "pads": pads, "buttons": ccs}
+}
+
+// View is what the screen and pads are set to show, for tests: the tab,
+// the editor page, the held legend, an armed slot action, the toast.
+func (s *surfaceCtl) View() map[string]any {
+	l := s.scr.Look()
+	return map[string]any{"page": surface.PageNames[l.page], "legend": l.legend, "pat_mode": l.patMode,
+		"toast": l.toast, "held": l.held, "scroll": l.scroll, "touched": l.touched}
 }
 
 func (s *surfaceCtl) isActive() bool {
@@ -862,11 +890,28 @@ func (s *surfaceCtl) led(c *alsaseq.Client, push alsaseq.Addr, pad bool, n, v ui
 		return
 	}
 	s.leds[k] = v
+	s.ledMu.Lock()
+	if s.shown == nil {
+		s.shown = map[uint16]uint8{}
+	}
+	s.shown[k] = v
+	s.ledMu.Unlock()
 	if pad {
 		c.SendNote(push, 0, n, v)
 	} else {
 		c.SendCC(push, 0, n, int32(v))
 	}
+}
+
+// pmClient is a push-manager client that names Stacks (hack.json's id).
+// While Stacks owns the surface push-manager refuses (409) the frames and
+// the intercept calls of a client that does not: the screen's own client
+// did not, and under Push Hack Home Stacks' screen never showed -- Home's
+// last frame stayed up while Stacks lit the pads (found 2026-10-17).
+func pmClient() *pmclient.Client {
+	c := pmclient.New("http://127.0.0.1:7701")
+	c.App = "stacks"
+	return c
 }
 
 func unavailable(key string) bool { return key == "read" || key == "read_mode" || key == "read_track" }

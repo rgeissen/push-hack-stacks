@@ -77,11 +77,13 @@ type screen struct {
 		sent      int
 		total, mx time.Duration
 		next      time.Time
+		failed    int    // frames refused since the last that went through
+		failErr   string // the failure last logged
 	}
 }
 
 func newScreen(eng *Engine, man *surface.Manifest) *screen {
-	return &screen{hold: holdState{chord: -1}, eng: eng, man: man, pm: pmclient.New("http://127.0.0.1:7701"),
+	return &screen{hold: holdState{chord: -1}, eng: eng, man: man, pm: pmClient(),
 		look: look{tab: 2, touched: -1, held: -1, scroll: -1}, synced: true}
 }
 
@@ -361,13 +363,23 @@ func (s *screen) send(img *image.NRGBA, now time.Time) {
 		return // nothing moved: send nothing
 	}
 	start := time.Now()
+	st := &s.stats
 	if err := s.pm.PushFrame(img); err != nil {
-		log.Printf("screen: %v", err)
+		// Once per kind of failure, not per frame: a refused frame came back
+		// ~15 times a second and wrote 30,000 log lines in a day.
+		if msg := err.Error(); msg != st.failErr {
+			log.Printf("screen: %v (said once; frames keep being tried)", err)
+			st.failErr = msg
+		}
+		st.failed++
 		return
+	}
+	if st.failed > 0 {
+		log.Printf("screen: frames go through again, after %d failed", st.failed)
+		st.failed, st.failErr = 0, ""
 	}
 	d := time.Since(start)
 	s.last = sum
-	st := &s.stats
 	st.sent++
 	st.total += d
 	st.mx = max(st.mx, d)
@@ -405,6 +417,11 @@ func (s *screen) listenFrame(img *image.NRGBA, now time.Time) {
 	}
 	sc := s.listen.scene(s.eng, now, key, mask)
 	sc.KeyName = strings.ToUpper(params["key"] + " " + params["scale"])
+	if s.managed != nil && s.managed() {
+		// Shift + Help is push-manager's: it opens Home, where LIVE (or Shift +
+		// Help again) gives Push back. "BACK TO LIVE" was the 0.2 cycle's.
+		sc.Leave = "SHIFT + HELP: PUSH HACK HOME"
+	}
 	surface.RenderListen(img, sc)
 	s.send(img, now)
 }
