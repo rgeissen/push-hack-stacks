@@ -38,6 +38,6 @@ clean:
 # the Move matrix's stylesheet and knob texts (../schwung-stacks).
 STACKS_REPO ?= $(abspath $(CURDIR)/../schwung-stacks)
 matrix:
-	$(DOCKER) go run ./cmd/matrixdata -state ../scripts/matrix/axis-state.json -out ../build/matrix
+	$(DOCKER) go run ./cmd/matrixdata -progression Axis -out ../build/matrix
 	python3 -I scripts/matrix/build.py build/matrix $(STACKS_REPO)/docs/stacks-matrix.html \
 		docs/control-matrix.html $$(git rev-parse --short HEAD)

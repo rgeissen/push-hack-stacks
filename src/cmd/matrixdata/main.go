@@ -5,8 +5,13 @@
 // the pad-map render of each page. scripts/matrix/build.py turns it into
 // docs/control-matrix.html; `make matrix` runs both.
 //
+// The state is the real core's: the progression loaded and chord 1
+// selected inside Stacks itself, every value read back -- so the CHORD
+// tab's encoders show the chord the frame selects. The pictures show it
+// playing, with the playhead inside chord 1.
+//
 //	go run ./cmd/matrixdata -manifest upstream/stacks/src/module.json \
-//	    -state <captured state .json> -out <dir>
+//	    -progression Axis -out <dir>
 package main
 
 import (
@@ -20,8 +25,10 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/federico-pepe/ableton-push-hack/core/push3"
+	"github.com/rgeissen/push-hack-stacks/dsp"
 	"github.com/rgeissen/push-hack-stacks/surface"
 )
 
@@ -42,7 +49,7 @@ type row struct {
 
 func main() {
 	man := flag.String("manifest", "upstream/stacks/src/module.json", "module.json")
-	state := flag.String("state", "", "a captured state map (.json) to draw")
+	progression := flag.String("progression", "Axis", "the library progression to draw")
 	out := flag.String("out", "matrix", "output folder")
 	flag.Parse()
 
@@ -54,20 +61,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	params := map[string]string{}
-	if *state != "" {
-		b, err := os.ReadFile(*state)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if err := json.Unmarshal(b, &params); err != nil {
-			log.Fatal(err)
-		}
-	}
-	if params["pat_names"] == "" { // a capture has no slot names: two used slots, named
-		params["patterns"] = "0005|1"
-		params["pat_names"] = "4:4:A E F#m D||4:4:Am F C G" + "|||||||||||||"
-	}
+	params := coreState(m, *progression)
 	os.MkdirAll(*out, 0o755)
 
 	names := []string{}
@@ -93,7 +87,7 @@ func main() {
 			for _, a := range surface.Actions(i) {
 				t.Actions = append(t.Actions, a.Label)
 			}
-			t.Screen = render(surface.Scene{M: m, Params: params, Tab: i, Touched: -1, Held: -1, Scroll: -1, Head: 11.5})
+			t.Screen = render(surface.Scene{M: m, Params: params, Tab: i, Touched: -1, Held: -1, Scroll: -1, Head: 3.5})
 		}
 		tabs = append(tabs, t)
 	}
@@ -125,6 +119,47 @@ func main() {
 		log.Fatal(err)
 	}
 	write(filepath.Join(*out, "data.json"), j)
+}
+
+// coreState runs Stacks: the progression loaded, kept in pattern slot 1
+// and copied to slot 3 (so PATTERNS has slots to show), chord 1 selected;
+// then every param the manifest names, read back. The frame is drawn
+// playing: Running on and chord 1 sounding, in `prog`'s header.
+func coreState(m *surface.Manifest, progression string) map[string]string {
+	if err := dsp.Init(); err != nil {
+		log.Fatal(err)
+	}
+	dir, err := os.MkdirTemp("", "matrixdata")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	in, err := dsp.New(dir, `{"state_path":"`+filepath.Join(dir, "state.json")+`"}`)
+	if err != nil {
+		log.Fatal(err)
+	}
+	in.SetParam("progression", progression)
+	in.SetParam("pat_store", "3")
+	in.SetParam("sel", "1")
+	params := map[string]string{}
+	for k := range m.Params {
+		if v, ok := in.GetParam(k); ok {
+			params[k] = v
+		}
+	}
+	for _, k := range []string{"prog", "patterns", "pat_names", "status"} {
+		params[k], _ = in.GetParam(k)
+	}
+	if params["progression"] != progression {
+		log.Fatalf("progression %q did not load (got %q)", progression, params["progression"])
+	}
+	h := strings.Split(params["prog"], "|")
+	if len(h) < 14 || h[2] != "1" {
+		log.Fatalf("prog: chord 1 not selected: %.40q", params["prog"])
+	}
+	h[3], h[8] = "0", "1" // chord 1 sounding, transport running
+	params["prog"] = strings.Join(h, "|")
+	return params
 }
 
 func render(sc surface.Scene) string {
