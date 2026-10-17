@@ -61,6 +61,7 @@ func main() {
 	var scrDone sync.WaitGroup
 	scrDone.Add(1)
 	go func() { defer scrDone.Done(); scr.run(ctx.Done()) }()
+	go ctl.deps.run(ctx.Done())
 
 	// HTTP first: the panel answers during the boot-settle wait.
 	srv := httpx.NewServer(fmt.Sprintf(":%d", cfg.Port), routes(eng, broker, ctl))

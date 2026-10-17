@@ -3,6 +3,7 @@ package surface
 import (
 	"image"
 	"image/color"
+	"strings"
 
 	"github.com/federico-pepe/ableton-push-hack/core/gfx"
 	"github.com/federico-pepe/ableton-push-hack/core/gfx/text"
@@ -87,3 +88,24 @@ func drawLegendCell(img *image.NRGBA, x, y int, p Pad) {
 
 // ledRGB is a pad's palette index as the screen draws it.
 func ledRGB(idx uint8) color.NRGBA { return push3.ColorForIndex(idx).RGB }
+
+// RenderNotice is a full-screen message: a title, and the body wrapped to
+// the width in upper case (the face is ASCII, and the screen speaks in
+// capitals).
+func RenderNotice(img *image.NRGBA, title, body string) {
+	gfx.FillRect(img, 0, 0, W, H, Ground)
+	gfx.FillRect(img, 0, 0, W, 3, Focus)
+	text.DrawScaled(img, 16, 34, 2, title, Focus)
+	var line string
+	y := 62
+	for _, w := range strings.Fields(strings.ToUpper(body)) {
+		if text.Width(line+" "+w) > W-32 && line != "" {
+			text.Draw(img, 16, y, line, Ink)
+			line, y = "", y+18
+		}
+		line = strings.TrimSpace(line + " " + w)
+	}
+	if line != "" {
+		text.Draw(img, 16, y, line, Ink)
+	}
+}

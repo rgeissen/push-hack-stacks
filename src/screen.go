@@ -117,6 +117,30 @@ func (s *screen) Update(f func(*look)) {
 	s.mu.Unlock()
 }
 
+// Notice shows a message on Push's screen for a few seconds and gives the
+// screen back -- for the one case where Stacks cannot take the surface
+// but the display works (an older Push Hack), so Shift + Help is not met
+// with nothing. PushImage, not PushFrame: an older push-manager has no
+// raw frame endpoint.
+func (s *screen) Notice(msg string) {
+	if on, _ := s.State(); on {
+		return
+	}
+	if st, err := s.pm.DisplayStatus(); err != nil || !st.Connected {
+		return
+	}
+	img := image.NewNRGBA(image.Rect(0, 0, surface.W, surface.H))
+	surface.RenderNotice(img, "STACKS CANNOT OPEN ON PUSH", msg)
+	if s.pm.SetMode(2) != nil {
+		return
+	}
+	s.pm.PushImage(img)
+	time.Sleep(4 * time.Second)
+	if on, _ := s.State(); !on {
+		s.pm.SetMode(0)
+	}
+}
+
 // Toast shows a short answer to something just done.
 func (s *screen) Toast(msg string) {
 	s.Update(func(l *look) { l.toast, l.toastAt = msg, time.Now() })

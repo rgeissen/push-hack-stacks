@@ -10,6 +10,7 @@ package main
 // Engine.Call: the C core has one caller, always.
 
 import (
+	"errors"
 	"log"
 	"strconv"
 	"sync"
@@ -36,10 +37,11 @@ const (
 )
 
 type surfaceCtl struct {
-	eng *Engine
-	scr *screen
-	man *surface.Manifest
-	pm  *pmclient.Client
+	deps *deps // what taking the surface needs of the framework
+	eng  *Engine
+	scr  *screen
+	man  *surface.Manifest
+	pm   *pmclient.Client
 
 	mu     sync.Mutex
 	c      *alsaseq.Client // nil until MIDI is up
@@ -66,7 +68,8 @@ type surfaceCtl struct {
 const ledRefresh = time.Second
 
 func newSurface(eng *Engine, scr *screen, man *surface.Manifest) *surfaceCtl {
-	s := &surfaceCtl{eng: eng, scr: scr, man: man, pm: pmclient.New("http://127.0.0.1:7701"),
+	pm := pmclient.New("http://127.0.0.1:7701")
+	s := &surfaceCtl{eng: eng, scr: scr, man: man, pm: pm, deps: newDeps(pm),
 		padAt: map[uint8]time.Time{}}
 	scr.pads = s.paint
 	return s
@@ -108,6 +111,11 @@ func (s *surfaceCtl) attach() error {
 // SetActive takes the surface or gives it back.
 func (s *surfaceCtl) SetActive(on bool, tab int) error {
 	if on {
+		if p := s.deps.Problem(); p != "" { // say what is missing, do not half-take
+			s.deps.note(p)
+			go s.scr.Notice(p) // on the screen too, when the screen works at all
+			return errors.New(p)
+		}
 		if err := s.pm.SetMidiFilterPass(true, passToLive); err != nil {
 			return err
 		}

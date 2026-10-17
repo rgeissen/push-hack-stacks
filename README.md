@@ -64,7 +64,15 @@ chord, the same way a keyboard does on Move.
 
 ## Requires
 
-- Push 3 Standalone with Push Hack installed (Push Manager on port 7701).
+- Push 3 Standalone with Push Hack installed: Push Manager (port 7701)
+  and Push Display.
+- For Stacks on Push's screen, pads and buttons: a Push Hack release with
+  pass-through buttons and raw frames
+  ([#33](https://github.com/federico-pepe/ableton-push-hack/pull/33)).
+  With an older one, Stacks still plays into Live and the browser panel
+  works. Shift + Help then shows on the screen what to update. The log
+  (`/data/push-hack/logs/stacks.log`) says it too, with lines starting
+  `deps:`.
 - Not supported yet: Read Clip and Read Track. On Move they read the set
   file, and Live's sets are a different format. They will come through
   Browser Bridge.
