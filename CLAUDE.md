@@ -58,5 +58,6 @@ pinned in `surface/inversion_test.go` with voicings measured off the core:
 ## Commands
 
     make test | make vet | make build
-    ./scripts/deploy.sh push.local [stop]
+    ./scripts/deploy.sh push.local [stop]   # SSH_OPTS="-o HostKeyAlias=push.local" for an IP
+    # with the catalog's service installed, deploy.sh swaps only the binary through it
     ./scripts/sync-stacks.sh [ref | --check]
