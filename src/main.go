@@ -57,12 +57,13 @@ func main() {
 		log.Fatalf("module.json: %v", err)
 	}
 	scr := newScreen(eng, man)
+	ctl := newSurface(eng, scr, man)
 	var scrDone sync.WaitGroup
 	scrDone.Add(1)
 	go func() { defer scrDone.Done(); scr.run(ctx.Done()) }()
 
 	// HTTP first: the panel answers during the boot-settle wait.
-	srv := httpx.NewServer(fmt.Sprintf(":%d", cfg.Port), routes(eng, broker, scr))
+	srv := httpx.NewServer(fmt.Sprintf(":%d", cfg.Port), routes(eng, broker, ctl))
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("http: %v", err)
@@ -87,12 +88,16 @@ func main() {
 	}()
 	log.Printf("midi: %q at %d:%d, %q at %d:%d", portOut, out.Addr().Client, out.Addr().Port,
 		portIn, in.Addr().Client, in.Addr().Port)
+	if err := ctl.attach(); err != nil {
+		log.Printf("surface: %v (controls stay off)", err)
+	}
 
 	config := fmt.Sprintf(`{"state_path":"%s"}`, filepath.Join(*dataDir, "state.json"))
 	if err := eng.Run(ctx, hackDir, config, newNotesOut(out)); err != nil {
 		log.Fatalf("engine: %v", err)
 	}
 	in.Close()     // ends ReadLoop
+	ctl.Close()    // intercept off: Live has its pads and buttons again
 	scrDone.Wait() // the display is back with Live before we go
 	// An open event stream never finishes on its own; give it a moment.
 	shut, cancel := context.WithTimeout(context.Background(), 2*time.Second)

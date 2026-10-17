@@ -2,16 +2,17 @@ package main
 
 // screen.go -- Stacks on Push's display.
 //
-// Frames go through push-manager's /api/display/* (core/pmclient): it is
-// the framebuffer's only writer, and a second writer is what the
-// single-writer rule exists to stop. Display only, for now: pads and
-// encoders still reach Live. POST /api/screen turns it on or off and picks
-// the bank until the top buttons are wired.
+// Frames go through push-manager's /api/display/frame as raw pixels
+// (core/pmclient.PushFrame): push-manager is the framebuffer's only writer,
+// and a second writer is what the single-writer rule exists to stop. A PNG
+// per frame through /api/display/image cost ~11 ms here and pushed the
+// block timer's worst lateness from ~2 ms to 5 ms.
 
 import (
 	"hash/fnv"
 	"image"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -21,46 +22,64 @@ import (
 	"github.com/rgeissen/push-hack-stacks/surface"
 )
 
-const frameEvery = 66 * time.Millisecond // ~15 fps, and only on change
+const (
+	frameEvery  = 66 * time.Millisecond // ~15 fps, and only on change
+	checkEvery  = time.Second           // display mode and Sync link
+	toastFor    = 1500 * time.Millisecond
+	syncHint    = "LIVE IS NOT SENDING CLOCK: SETTINGS > MIDI > STACKS IN > SYNC ON"
+	seqClients  = "/proc/asound/seq/clients"
+	ownPortName = "\"Stacks In\""
+)
+
+// look is what the hardware selects and the screen and pads draw: shared
+// by the control surface (which writes it) and the display (which reads it).
+type look struct {
+	tab     int
+	page    surface.EditPage
+	touched int
+	held    int // chord a pad is auditioning, -1 none
+	toast   string
+	toastAt time.Time
+}
 
 type screen struct {
 	eng *Engine
 	man *surface.Manifest
 	pm  *pmclient.Client
 
-	mu  sync.Mutex
-	on  bool
-	tab int
+	mu   sync.Mutex
+	on   bool
+	look look
 
-	last     uint64 // hash of the last frame sent
-	pos      int    // last whole-unit position read, for interpolation
-	posAt    time.Time
-	sent     int
-	sendTime time.Duration
-	maxSend  time.Duration
-	nextLog  time.Time
+	pads   func(surface.Scene, surface.EditPage) // LED painter, set by the surface
+	last   uint64                                // hash of the last frame sent
+	pos    int                                   // last whole-unit position, for interpolation
+	posAt  time.Time
+	synced bool // Live is connected to Stacks In
+	stats  struct {
+		sent      int
+		total, mx time.Duration
+		next      time.Time
+	}
 }
 
 func newScreen(eng *Engine, man *surface.Manifest) *screen {
-	return &screen{eng: eng, man: man, pm: pmclient.New("http://127.0.0.1:7701"), tab: 2}
+	return &screen{eng: eng, man: man, pm: pmclient.New("http://127.0.0.1:7701"),
+		look: look{tab: 2, touched: -1, held: -1}, synced: true}
 }
 
 // Set takes the display (mode 2) or gives it back to Live (mode 0).
 func (s *screen) Set(on bool, tab int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if tab >= 0 && tab < 8 {
-		s.tab = tab
+	if tab >= 0 && tab < 7 {
+		s.look.tab = tab
 	}
 	s.last = 0 // redraw on the next tick
 	if on == s.on {
 		return nil
 	}
-	mode := 0
-	if on {
-		mode = 2
-	}
-	if err := s.pm.SetMode(mode); err != nil {
+	if err := s.pm.SetMode(map[bool]int{true: 2, false: 0}[on]); err != nil {
 		return err
 	}
 	s.on = on
@@ -70,7 +89,26 @@ func (s *screen) Set(on bool, tab int) error {
 func (s *screen) State() (bool, int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.on, s.tab
+	return s.on, s.look.tab
+}
+
+// Look returns a copy of the shared selection; Update changes it.
+func (s *screen) Look() look {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.look
+}
+
+func (s *screen) Update(f func(*look)) {
+	s.mu.Lock()
+	f(&s.look)
+	s.last = 0
+	s.mu.Unlock()
+}
+
+// Toast shows a short answer to something just done.
+func (s *screen) Toast(msg string) {
+	s.Update(func(l *look) { l.toast, l.toastAt = msg, time.Now() })
 }
 
 // run draws until done, then hands the display back.
@@ -78,6 +116,7 @@ func (s *screen) run(done <-chan struct{}) {
 	t := time.NewTicker(frameEvery)
 	defer t.Stop()
 	img := image.NewNRGBA(image.Rect(0, 0, surface.W, surface.H))
+	var nextCheck time.Time
 	for {
 		select {
 		case <-done:
@@ -86,16 +125,61 @@ func (s *screen) run(done <-chan struct{}) {
 			}
 			return
 		case now := <-t.C:
-			on, tab := s.State()
-			if !on {
-				continue
+			if now.After(nextCheck) {
+				nextCheck = now.Add(checkEvery)
+				s.check()
 			}
-			s.frame(img, tab, now)
+			if on, _ := s.State(); on {
+				s.frame(img, now)
+			}
 		}
 	}
 }
 
-func (s *screen) frame(img *image.NRGBA, tab int, now time.Time) {
+// check re-takes the display after a Push3 restart (the hook starts in
+// mode 0) and notices whether Live is sending clock to Stacks In at all:
+// Live forgets that port's Sync whenever it is stopped uncleanly.
+func (s *screen) check() {
+	b, err := os.ReadFile(seqClients)
+	synced := err != nil || portConnected(string(b), ownPortName)
+	s.mu.Lock()
+	if synced != s.synced {
+		s.last = 0
+	}
+	s.synced = synced
+	on := s.on
+	s.mu.Unlock()
+	if !on {
+		return
+	}
+	if st, err := s.pm.DisplayStatus(); err == nil && st.Connected && st.Mode != 2 {
+		log.Printf("screen: display was reset to mode %d (Push3 restart?), taking it again", st.Mode)
+		if s.pm.SetMode(2) == nil {
+			s.mu.Lock()
+			s.last = 0
+			s.mu.Unlock()
+		}
+	}
+}
+
+// portConnected reports whether a port in /proc/asound/seq/clients has
+// anything connected to it.
+func portConnected(clients, port string) bool {
+	i := strings.Index(clients, port)
+	if i < 0 {
+		return false
+	}
+	rest := clients[i:]
+	if j := strings.Index(rest[1:], "\n  Port "); j >= 0 {
+		rest = rest[:j+1]
+	}
+	if j := strings.Index(rest, "\nClient "); j >= 0 {
+		rest = rest[:j]
+	}
+	return strings.Contains(rest, "Connected From")
+}
+
+func (s *screen) frame(img *image.NRGBA, now time.Time) {
 	params, ready := s.eng.Snapshot()
 	if !ready {
 		return
@@ -112,8 +196,26 @@ func (s *screen) frame(img *image.NRGBA, tab int, now time.Time) {
 	params["prog"] = prog
 	head := s.head(rui, prog, now)
 
-	surface.Render(img, surface.Scene{M: s.man, Params: params, Tab: tab, Touched: -1, Head: head,
-		Blink: now.UnixMilli()/500%2 == 1, Toast: toastFor(params)})
+	s.mu.Lock()
+	l, synced := s.look, s.synced
+	if l.toast != "" && now.Sub(l.toastAt) > toastFor {
+		s.look.toast, l.toast = "", ""
+	}
+	s.mu.Unlock()
+
+	toast := l.toast
+	switch {
+	case params["status"] == "armed":
+		toast = "ARMED - PRESS RECORD"
+	case toast == "" && !synced && params["run"] == "on":
+		toast = syncHint
+	}
+	sc := surface.Scene{M: s.man, Params: params, Tab: l.tab, Touched: l.touched, Head: head,
+		Blink: now.UnixMilli()/500%2 == 1, Toast: toast, Held: l.held}
+	if s.pads != nil {
+		s.pads(sc, l.page)
+	}
+	surface.Render(img, sc)
 	h := fnv.New64a()
 	h.Write(img.Pix)
 	sum := h.Sum64()
@@ -121,21 +223,22 @@ func (s *screen) frame(img *image.NRGBA, tab int, now time.Time) {
 		return // nothing moved: send nothing
 	}
 	start := time.Now()
-	if err := s.pm.PushImage(img); err != nil {
+	if err := s.pm.PushFrame(img); err != nil {
 		log.Printf("screen: %v", err)
 		return
 	}
 	d := time.Since(start)
 	s.last = sum
-	s.sent++
-	s.sendTime += d
-	s.maxSend = max(s.maxSend, d)
-	if now.After(s.nextLog) {
-		if s.sent > 0 {
-			log.Printf("screen: %d frames, send avg %v max %v", s.sent,
-				(s.sendTime / time.Duration(s.sent)).Round(time.Microsecond), s.maxSend.Round(time.Microsecond))
+	st := &s.stats
+	st.sent++
+	st.total += d
+	st.mx = max(st.mx, d)
+	if now.After(st.next) {
+		if st.sent > 0 {
+			log.Printf("screen: %d frames, send avg %v max %v", st.sent,
+				(st.total / time.Duration(st.sent)).Round(time.Microsecond), st.mx.Round(time.Microsecond))
 		}
-		s.sent, s.sendTime, s.maxSend, s.nextLog = 0, 0, 0, now.Add(time.Minute)
+		st.sent, st.total, st.mx, st.next = 0, 0, 0, now.Add(time.Minute)
 	}
 }
 
@@ -156,16 +259,7 @@ func (s *screen) head(rui, prog string, now time.Time) float64 {
 		return float64(pos)
 	}
 	unitsPerSec := float64(bpm) / 60 * float64(p.StepUnits) / 4
-	frac := now.Sub(s.posAt).Seconds() * unitsPerSec
-	return float64(pos) + min(frac, 0.999)
-}
-
-// toastFor is what the module's status asks the screen to say.
-func toastFor(params map[string]string) string {
-	if params["status"] == "armed" {
-		return "ARMED - PRESS RECORD"
-	}
-	return ""
+	return float64(pos) + min(now.Sub(s.posAt).Seconds()*unitsPerSec, 0.999)
 }
 
 func atoiSafe(s string) int {

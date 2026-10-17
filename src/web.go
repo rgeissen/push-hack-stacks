@@ -61,7 +61,7 @@ func panelPage() string {
 	return remoteShim + panelHTML
 }
 
-func routes(e *Engine, broker *sse.Broker[map[string]string], scr *screen) http.Handler {
+func routes(e *Engine, broker *sse.Broker[map[string]string], ctl *surfaceCtl) http.Handler {
 	page := panelPage()
 	mux := http.NewServeMux()
 
@@ -120,8 +120,8 @@ func routes(e *Engine, broker *sse.Broker[map[string]string], scr *screen) http.
 		sse.Serve(w, r, ch, func(m map[string]string) ([]byte, error) { return json.Marshal(m) })
 	})
 
-	// The Push display: {"on": true, "tab": 2}. tab is the bank (0 MAIN ..
-	// 5 CLIP, 6 PATTERNS) until the top buttons choose it.
+	// Take the Push or give it back, as Shift + Help and the LIVE tab do:
+	// {"on": true, "tab": 2}. tab is the bank (0 MAIN .. 5 CLIP, 6 PATTERNS).
 	mux.HandleFunc("POST /api/screen", func(w http.ResponseWriter, r *http.Request) {
 		body := struct {
 			On  bool `json:"on"`
@@ -135,15 +135,15 @@ func routes(e *Engine, broker *sse.Broker[map[string]string], scr *screen) http.
 		if body.Tab != nil {
 			tab = *body.Tab
 		}
-		if err := scr.Set(body.On, tab); err != nil {
+		if err := ctl.SetActive(body.On, tab); err != nil {
 			http.Error(w, "push-manager: "+err.Error(), http.StatusBadGateway)
 			return
 		}
-		on, t := scr.State()
+		on, t := ctl.scr.State()
 		httpx.JSON(w, map[string]any{"on": on, "tab": t})
 	})
 	mux.HandleFunc("GET /api/screen", func(w http.ResponseWriter, r *http.Request) {
-		on, t := scr.State()
+		on, t := ctl.scr.State()
 		httpx.JSON(w, map[string]any{"on": on, "tab": t})
 	})
 

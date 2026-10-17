@@ -129,3 +129,23 @@ func TestSpansFillTheWidth(t *testing.T) {
 		t.Errorf("16 equal = %v", got[:3])
 	}
 }
+
+// Stacks keeps the last played index after a stop, and a held pad sounds
+// with running=0 (both measured on device).
+func TestSounding(t *testing.T) {
+	stopped, _ := ParseProg("v13|4|1|0|8|5ad|9|32|0|4|120|0|0|A,A3,0,8,0,100,0,1,57:100")
+	if got := stopped.Sounding(-1); got != -1 {
+		t.Errorf("stopped, nothing held: sounding %d, want -1", got)
+	}
+	held, _ := ParseProg("v13|4|2|1|8|5ad|9|32|0|4|120|0|0|A,A3,0,8,0,100,0,1,57:100")
+	if got := held.Sounding(1); got != 1 {
+		t.Errorf("pad holding chord 2: sounding %d, want 1", got)
+	}
+	if got := held.Sounding(3); got != -1 {
+		t.Errorf("a different pad held: sounding %d, want -1", got)
+	}
+	running, _ := ParseProg("v13|4|1|2|8|5ad|9|32|1|4|120|0|0|A,A3,0,8,0,100,0,1,57:100")
+	if got := running.Sounding(-1); got != 2 {
+		t.Errorf("running: sounding %d, want 2", got)
+	}
+}

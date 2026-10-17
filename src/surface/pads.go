@@ -22,7 +22,8 @@ import (
 type Pad struct {
 	Color uint8
 	Label string
-	Value string // the param value a press writes; "" for none
+	Key   string // the param a press writes (editor rows); "" for none
+	Value string // the value it writes
 }
 
 // EditPage is which set of editor rows is up.
@@ -118,6 +119,7 @@ func Pads(s Scene, page EditPage) [8][8]Pad {
 	off, focus, white := idx("off"), idx("amber"), idx("white_btn")
 
 	p, ok := ParseProg(s.Params["prog"])
+	p.Playing = p.Sounding(s.Held)
 	for i := 0; i < 16; i++ {
 		row, col := i/8, i%8
 		g[row][col] = Pad{Color: off}
@@ -160,7 +162,7 @@ func Pads(s Scene, page EditPage) [8][8]Pad {
 		for col := 0; col < 8; col++ {
 			pad := Pad{Color: off}
 			if col < len(er.Options) {
-				pad = Pad{Color: hue, Label: er.Labels[col], Value: er.Options[col]}
+				pad = Pad{Color: hue, Label: er.Labels[col], Key: er.Key, Value: er.Options[col]}
 				if er.Options[col] == cur[er.Key] {
 					pad.Color = focus
 				}

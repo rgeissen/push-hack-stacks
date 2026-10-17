@@ -101,6 +101,17 @@ func ParseProg(s string) (Prog, bool) {
 	return p, true
 }
 
+// Sounding is the chord actually sounding, or -1. `playing` alone is not
+// enough: it keeps the LAST chord after a stop (seen on device: playing=0
+// with running=0), and a held pad's audition sounds with running=0. So: the
+// playing chord while the transport runs, or the chord the pad is holding.
+func (p Prog) Sounding(held int) int {
+	if p.Running || (held >= 0 && p.Playing == held) {
+		return p.Playing
+	}
+	return -1
+}
+
 // Starts returns each chord's onset in units, back to back from 0.
 func (p Prog) Starts() []int {
 	at := make([]int, len(p.Chords))

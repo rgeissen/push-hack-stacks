@@ -50,6 +50,7 @@ type Scene struct {
 	Head    float64 // playhead in units, interpolated between reads
 	Toast   string  // a transient answer to something just done
 	Blink   bool    // the slow blink phase, for ARMED
+	Held    int     // chord index a pad is holding (auditioning), -1 none
 }
 
 const (
@@ -77,6 +78,7 @@ func (s Scene) tabs() []string {
 func Render(img *image.NRGBA, s Scene) {
 	gfx.FillRect(img, 0, 0, W, H, Ground)
 	p, ok := ParseProg(s.Params["prog"])
+	p.Playing = p.Sounding(s.Held)
 	drawTabs(img, s)
 	if s.Tab == TabPatterns {
 		drawPatternsHead(img)
