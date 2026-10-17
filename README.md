@@ -42,7 +42,10 @@ Every control is in the
   the MAIN tab marks them FROM PUSH. A scale Stacks does not have (it has
   13, Live about 30) keeps Stacks' scale and follows the key only. Turning
   Stacks' own Key or Scale stops following. Needs Browser Bridge 0.3 or
-  later, active in Live (Settings > MIDI > Control Scripts).
+  later, active in Live (Settings > MIDI > Control Scripts), and a Push
+  Hack with `/api/live/scale` (pending:
+  [push-hack-browser-bridge#3](https://github.com/federico-pepe/push-hack-browser-bridge/pull/3),
+  [ableton-push-hack#36](https://github.com/federico-pepe/ableton-push-hack/pull/36)).
 - **Inversion shows AUTO** when Voice Grouping is a "dyn" mode. Then
   Stacks picks each chord's inversion itself, so the chord moves as little
   as possible from the chord before. The first chord, and a chord after a
