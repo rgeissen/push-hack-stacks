@@ -164,6 +164,14 @@ func (s *surfaceCtl) handle(msg []byte) {
 		return
 	}
 	kind, num, val := msg[0]&0xF0, msg[1], msg[2]
+	// Push's buttons and encoders are on channel 1. With MPE the pads add
+	// per-note expression on the note's own channel (2-16) -- and MPE's
+	// slide is CC 74, the same number as encoder 4: every pad press turned
+	// CHORD SHAPE (seen in the surface log as shape m13 -> dim -> rest on
+	// each press). Controls are read on channel 1 only; pad notes on any.
+	if kind == 0xB0 && msg[0]&0x0F != 0 {
+		return
+	}
 	if kind == 0xB0 && num == push3.CCShift {
 		s.shift = val > 0
 	}
