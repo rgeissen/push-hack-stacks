@@ -27,6 +27,12 @@ browser.
   tab, each slot shows its chords, and the bottom buttons are **CLEAR
   SLOT** and **COPY TO SLOT**: press one, then tap the slot. Press it again
   to cancel. Holding **Delete** and tapping a pattern pad also clears it.
+- **The note lanes keep their size** while you change voicings (inversion,
+  octave, colour, grouping). They zoom out only when notes would leave the
+  screen. They zoom back in only when the harmony changes: a new chord, a
+  chord added or removed, or a pattern or progression loaded. To keep the
+  lanes still, the view moves up or down by whole octaves. The thin bar at
+  the right edge shows which part of the register is on screen.
 - **Inversion shows AUTO** when Voice Grouping is a "dyn" mode. Then
   Stacks picks each chord's inversion itself, so the chord moves as little
   as possible from the chord before. The first chord, and a chord after a

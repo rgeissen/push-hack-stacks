@@ -1,6 +1,7 @@
 package surface
 
 import (
+	"hash/fnv"
 	"image"
 	"image/color"
 	"strings"
@@ -34,10 +35,16 @@ const (
 	stY0, stY1 = 51, 142
 	actY, actH = 142, 18
 
-	numRow   = stY0 + 12 // numeral baseline, the top of every chord
-	laneTop  = stY0 + 17
-	laneBot  = stY1 - 24
-	nameBase = stY1 - 4 // the name, at the foot of its chord
+	numRow = stY0 + 12 // numeral and name baseline, the top of every chord
+)
+
+// The lanes' band. The chord's name sat at its foot at 2x and took 24 px
+// of it; on top, beside its numeral, the lanes get 71 px instead of 50 --
+// the difference between 2 px lanes and 4 px ones for a progression that
+// spans two and a half octaves (compared side by side, 2026-10-17).
+const (
+	laneTop = stY0 + 16
+	laneBot = stY1 - 4
 )
 
 // Scene is everything one frame needs. Params is the module's flat state
@@ -226,23 +233,127 @@ type staff struct {
 	top     int
 }
 
-// LaneRange is the staff's window, in lanes (degrees), and what those
-// degrees were counted against. Zero means "fit to the notes".
+// LaneRange is the staff's window: the lowest lane shown, the pixels per
+// lane, and what the lanes were counted against. Zero means "fit afresh".
 type LaneRange struct {
-	Lo, Hi    int
+	Lo, Hi    int // lanes (degrees) at the foot and the head of the window
+	Step      int // pixels per lane, one of laneSteps
 	Key, Mask int
 	Mode      string
+	Harmony   uint64 // the chords' names, hashed: what may re-frame the zoom
 }
 
-// FitLanes keeps the staff still. Fitting every frame meant changing one
-// chord (its inversion, say) rescaled the lanes under all the others --
-// they moved though nothing about them had. So the window only grows, to
-// take in a note that leaves it, and is fitted afresh only when it would
-// hold more than an octave of nothing, or the key, scale or lane mode
-// change. A sweep of one chord's inversions settles after one pass.
+// laneSteps are the only spacings the staff uses, largest first. A
+// spacing worked out from the notes (height / span) changed with every
+// edit: one chord inverted, and every chord's lanes drew closer or
+// further apart and slid -- reported on device as "totally inconsistent".
+// With a few fixed steps an interval is the same height from one edit to
+// the next, and only a real change of room changes it.
+var laneSteps = []int{6, 5, 4, 3, 2}
+
+// lanesAt is how many lane intervals a step shows.
+func lanesAt(step int) int { return (laneBot - laneTop) / step }
+
+// fitStep is the largest step that shows span lanes; the smallest if none.
+func fitStep(span int) int {
+	for _, s := range laneSteps {
+		if span <= lanesAt(s) {
+			return s
+		}
+	}
+	return laneSteps[len(laneSteps)-1]
+}
+
+// FitLanes moves the window as little as the notes allow. In order:
+//
+//   - key, scale or lane mode changed (or nothing before): fit afresh,
+//     the largest step that shows every note with headroom, centred;
+//   - the notes outgrew the window: zoom out, about the window's centre,
+//     so what did not change stays near where it was;
+//   - the HARMONY changed (a chord's name, the number of chords -- a new
+//     degree, a progression or pattern loaded) and the notes fit a larger
+//     step: zoom in, about the centre;
+//   - otherwise only pan, and by whole octaves when that is enough, so the
+//     tonic lines keep their rows and nothing shifts.
+//
+// So voicing -- inversion, octave, colour, grouping -- never zooms in. A
+// first version zoomed in whenever the notes fit a larger step with an
+// octave to spare; a sweep over several chords' inversions swings the span
+// by more than an octave, and the zoom went out and back in every pass
+// (TestLanesHoldStillThroughASweep). No margin is safe against a wider
+// sweep; tying zoom-in to the harmony is.
 func FitLanes(p Prog, mode string, prev LaneRange) LaneRange {
 	st := lanesFor(p, mode)
-	lo, hi := 1<<30, -1
+	lo, hi := noteSpan(p, st)
+	span := hi - lo
+	octave := st.degree[72] - st.degree[60]
+	harmony := harmonyOf(p)
+	at := func(step, wlo int) LaneRange {
+		return LaneRange{Lo: wlo, Hi: wlo + lanesAt(step), Step: step, Key: p.Key, Mask: p.ScaleMask,
+			Mode: mode, Harmony: harmony}
+	}
+	// Whenever a zoom is chosen it leaves half an octave of headroom: a fit
+	// to the notes alone made the first inversion edit zoom out, and the
+	// next, and the next (6, 5, 4, 3 px over one sweep on device data).
+	want := fitStep(span + (octave+1)/2)
+	if prev.Step == 0 || prev.Key != p.Key || prev.Mask != p.ScaleMask || prev.Mode != mode {
+		return panTo(at(want, lo-(lanesAt(want)-span)/2), lo, hi, octave)
+	}
+	step := prev.Step
+	if span > lanesAt(step) || (harmony != prev.Harmony && want > step) {
+		step = want
+	}
+	win := prev
+	win.Harmony = harmony
+	if step != prev.Step {
+		twiceMid := 2*prev.Lo + lanesAt(prev.Step)
+		win = at(step, (twiceMid-lanesAt(step))/2)
+	}
+	return panTo(win, lo, hi, octave)
+}
+
+// harmonyOf hashes the chords' names: what a voicing edit leaves alone.
+func harmonyOf(p Prog) uint64 {
+	h := fnv.New64a()
+	for _, c := range p.Chords {
+		h.Write([]byte(c.Name))
+		h.Write([]byte{0})
+	}
+	return h.Sum64()
+}
+
+// panTo shifts the window the least that shows lo..hi, by whole octaves
+// when that shows them too.
+func panTo(w LaneRange, lo, hi, octave int) LaneRange {
+	if lo >= w.Lo && hi <= w.Hi {
+		return w
+	}
+	n := w.Hi - w.Lo
+	var d int
+	switch {
+	case hi-lo > n: // cannot show them all (past the smallest step): centre
+		d = lo - (n-(hi-lo))/2 - w.Lo
+	case lo < w.Lo:
+		d = lo - w.Lo
+	default:
+		d = hi - w.Hi
+	}
+	if octave > 0 && hi-lo <= n {
+		k := (abs(d) + octave - 1) / octave * octave
+		if d < 0 {
+			k = -k
+		}
+		if lo >= w.Lo+k && hi <= w.Hi+k {
+			d = k
+		}
+	}
+	w.Lo, w.Hi = w.Lo+d, w.Hi+d
+	return w
+}
+
+// noteSpan is the lanes the notes need, with a lane of air either side.
+func noteSpan(p Prog, st staff) (lo, hi int) {
+	lo, hi = 1<<30, -1
 	for _, c := range p.Chords {
 		for _, n := range c.Notes {
 			lo, hi = min(lo, st.degree[n]), max(hi, st.degree[n])
@@ -251,33 +362,23 @@ func FitLanes(p Prog, mode string, prev LaneRange) LaneRange {
 	if hi < 0 {
 		lo, hi = st.degree[57], st.degree[69]
 	}
-	lo, hi = lo-1, hi+1 // a lane of air either side
-	octave := st.degree[72] - st.degree[60]
-	fit := LaneRange{Lo: lo, Hi: hi, Key: p.Key, Mask: p.ScaleMask, Mode: mode}
-	if prev.Hi <= prev.Lo || prev.Key != p.Key || prev.Mask != p.ScaleMask || prev.Mode != mode {
-		return fit
+	return lo - 1, hi + 1
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
 	}
-	// Grow to take the new notes in, keeping what is there: a refit to the
-	// notes alone would drop the room a sweep had already made, and the
-	// sweep back would jump the lanes again.
-	grown := prev
-	grown.Lo, grown.Hi = min(prev.Lo, lo), max(prev.Hi, hi)
-	if (grown.Hi-grown.Lo)-(hi-lo) > octave {
-		return fit // more than an octave of nothing: tighten
-	}
-	return grown
+	return n
 }
 
 func newStaff(p Prog, lanes string, win LaneRange) staff {
 	st := lanesFor(p, lanes)
-	if win.Hi <= win.Lo || win.Key != p.Key || win.Mask != p.ScaleMask || win.Mode != lanes {
+	if win.Step == 0 || win.Key != p.Key || win.Mask != p.ScaleMask || win.Mode != lanes {
 		win = FitLanes(p, lanes, LaneRange{})
 	}
-	lo, hi := win.Lo, win.Hi
-	h := laneBot - laneTop
-	st.step = min(max(h/max(hi-lo, 1), 2), 7)
-	st.lo, st.hi = lo, hi
-	st.top = laneTop + (h-st.step*(hi-lo))/2
+	st.step, st.lo, st.hi = win.Step, win.Lo, win.Hi
+	st.top = laneTop + (laneBot-laneTop-st.step*(st.hi-st.lo))/2
 	return st
 }
 
@@ -393,26 +494,36 @@ func drawStaff(img *image.NRGBA, s Scene, p Prog) {
 	for d := st.lo; d <= st.hi; d++ {
 		y := st.laneY(d)
 		if !st.tonic[d] {
-			gfx.FillRect(img, 0, y, W, 1, Rule)
+			lane := Rule
+			if st.step <= 3 { // close lanes: a fainter rule, or they read as a fill
+				lane = mix(Rule, Ground, 0.45)
+			}
+			gfx.FillRect(img, 0, y, W, 1, lane)
 			continue
 		}
 		// The key's root is the reference line, brighter, with a
-		// registration mark at each end of the screen.
+		// registration mark at the left edge (the right carries the register bar).
 		gfx.FillRect(img, 0, y, W, 1, mix(Dim, Rule, 0.3))
 		gfx.FillRect(img, 0, y-1, 3, 3, Dim)
-		gfx.FillRect(img, W-3, y-1, 3, 3, Dim)
 	}
-	for _, b := range blocks {
-		drawChord(img, b.x0, b.x1, b.i, starts[b.i], p, st, b.ghost)
-	}
-	// The clip loops the phrase: say how often, at the top right.
+	// The clip loops the phrase: say how often, at the top right -- the
+	// last chord's name gives way to it.
+	loops := ""
 	if clip > music {
-		loops := "X" + itoa((clip+music-1)/music)
+		loops = "X" + itoa((clip+music-1)/music)
 		if clip%music != 0 {
 			loops = itoa(clip/p.StepUnits) + " BAR CLIP"
 		}
 		right(img, W-6, numRow, loops, Dim)
 	}
+	for _, b := range blocks {
+		reserve := 0
+		if b.i == len(p.Chords)-1 && loops != "" {
+			reserve = text.Width(loops) + 8
+		}
+		drawChord(img, b.x0, b.x1, b.i, starts[b.i], p, st, b.ghost, reserve)
+	}
+	drawRegister(img, st)
 	// The playhead, at its place in the phrase.
 	if p.Running || s.Held >= 0 || s.Head > 0 {
 		u := s.Head
@@ -430,7 +541,7 @@ func drawStaff(img *image.NRGBA, s Scene, p Prog) {
 	}
 }
 
-func drawChord(img *image.NRGBA, x0, x1, i, start int, p Prog, st staff, ghost bool) {
+func drawChord(img *image.NRGBA, x0, x1, i, start int, p Prog, st staff, ghost bool, reserve int) {
 	c := p.Chords[i]
 	f := FunctionOf(c, p.Key, p.ScaleMask)
 	full, _ := FuncHue(f)
@@ -457,16 +568,25 @@ func drawChord(img *image.NRGBA, x0, x1, i, start int, p Prog, st staff, ghost b
 			hx1 = nx + int(hits[k+1]/float64(c.Len)*float64(nw)) - 2
 		}
 		hx1 = max(hx1, hx0+2)
+		// A bar is as thick as its lane allows, so neighbours never merge.
+		t := min(3, max(1, st.step-1))
 		for _, n := range c.Notes {
-			y := st.laneY(st.degree[n])
-			if c.Mute { // an outline: you still see what it would play
-				gfx.FillRect(img, hx0, y-1, hx1-hx0, 1, Dim)
-				gfx.FillRect(img, hx0, y+1, hx1-hx0, 1, Dim)
+			d := st.degree[n]
+			if d < st.lo || d > st.hi { // beyond the smallest step's reach: a mark at the edge
+				gfx.FillRect(img, hx0, st.laneY(min(max(d, st.lo), st.hi)), hx1-hx0, 1, Dim)
 				continue
 			}
-			gfx.FillRect(img, hx0, y-1, hx1-hx0, 3, note)
+			y := st.laneY(d) - t/2
+			if c.Mute { // an outline: you still see what it would play
+				gfx.FillRect(img, hx0, y, hx1-hx0, 1, Dim)
+				if t > 1 {
+					gfx.FillRect(img, hx0, y+t-1, hx1-hx0, 1, Dim)
+				}
+				continue
+			}
+			gfx.FillRect(img, hx0, y, hx1-hx0, t, note)
 			if !st.inScale[n] && k == 0 && !ghost { // the accidental mark
-				gfx.FillRect(img, hx0-3, y-1, 2, 3, Bright)
+				gfx.FillRect(img, hx0-3, y, 2, t, Bright)
 			}
 		}
 	}
@@ -483,15 +603,15 @@ func drawChord(img *image.NRGBA, x0, x1, i, start int, p Prog, st staff, ghost b
 	}
 
 	// The degree in its function colour, where the chord begins.
+	dx := x0 + 6
 	if roman, acc := Degree(c, p.Key, p.ScaleMask); roman != "" && w >= 24 {
-		dx := x0 + 6
 		if acc != 0 {
 			drawAccidental(img, dx, numRow-1, acc, full)
 			dx += 6
 		}
 		text.Draw(img, dx, numRow, roman, full)
+		dx += text.Width(roman) + 7
 	}
-	// The name at its foot, as large as the chord is long.
 	name := DisplayName(c.Name)
 	col := Ink
 	if selected || playing {
@@ -503,13 +623,8 @@ func drawChord(img *image.NRGBA, x0, x1, i, start int, p Prog, st staff, ghost b
 	if c.Mute {
 		col = Dim
 	}
-	switch {
-	case text.WidthScaled(name, 2) <= w-12:
-		text.DrawScaled(img, x0+6, nameBase, 2, name, col)
-	case text.Width(name) <= w-10:
-		text.Draw(img, x0+6, nameBase-4, name, col)
-	case w >= 20:
-		text.Draw(img, x0+6, nameBase-4, text.Truncate(name, (w-10)/7), col)
+	if room := (x1 - 5 - reserve - dx) / 7; room >= 4 { // on top, after its numeral
+		text.Draw(img, dx, numRow, text.Truncate(name, room), col)
 	}
 	if selected {
 		frame(img, x0+1, stY0, w-1, stY1-stY0-1, Focus)
@@ -805,4 +920,20 @@ func pad2(n int) string {
 func invAuto(s Scene) bool {
 	p, ok := ParseProg(s.Params["prog"])
 	return ok && p.InvAuto(p.Sel-1, s.Params["grouping"])
+}
+
+// drawRegister is the window's place in the whole register, as a scroll
+// bar at the right edge: a track for the piano's range (A0-C8) and a mark
+// for the lanes on screen. The window pans by whole octaves to keep the
+// lanes still, so moving everything an octave (Octave Default) can leave
+// the staff looking the same -- the bar is what shows it moved.
+func drawRegister(img *image.NRGBA, st staff) {
+	const x, w = W - 3, 3
+	lo, hi := st.degree[21], st.degree[108]
+	y0, y1 := laneTop, laneBot
+	gfx.FillRect(img, x, y0, w, y1-y0, Panel)
+	gfx.FillRect(img, x+1, y0, 1, y1-y0, Rule)
+	at := func(d int) int { return y1 - (y1-y0)*(min(max(d, lo), hi)-lo)/max(hi-lo, 1) }
+	top, bot := at(st.hi), at(st.lo)
+	gfx.FillRect(img, x, top, w, max(bot-top, 2), Dim)
 }

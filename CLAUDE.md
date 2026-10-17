@@ -40,6 +40,21 @@ with the user BEFORE writing drawing code. After the implementation, owe a
 Push control-matrix artifact like the Move one
 (https://claude.ai/artifact/3hAogpmmAxZvgFqbf38WvS).
 
+## The staff's lanes hold still (surface.FitLanes)
+
+Reported twice on device as inconsistent; the rules that fixed it, each
+pinned in `surface/inversion_test.go` with voicings measured off the core:
+
+- Lane spacing is one of `laneSteps` (6..2 px), never height/span: a
+  derived spacing changed on every edit and moved every chord.
+- Zoom OUT only when notes would leave the window; zoom IN only when the
+  harmony (chord names, count) changes. A margin-based zoom-in pumped on a
+  multi-chord inversion sweep -- no margin outruns a wider sweep.
+- Otherwise pan, by whole octaves when that suffices (tonic rows stay).
+- Zooms leave half an octave of headroom; key/scale/lane mode refit.
+- The window lives in `screen` (main) across frames; `Scene.Lanes` zero
+  fits afresh (mockups). The register bar shows octave pans.
+
 ## Commands
 
     make test | make vet | make build

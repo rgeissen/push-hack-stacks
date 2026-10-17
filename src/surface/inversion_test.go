@@ -36,30 +36,176 @@ func TestInvAuto(t *testing.T) {
 	}
 }
 
-func TestFitLanesHoldsStill(t *testing.T) {
-	at := func(e7 string, prev LaneRange) LaneRange {
-		p, _ := ParseProg(progE7(e7))
-		return FitLanes(p, "scale", prev)
+// progOf writes a v13 prog of one-bar chords from their notes, in D major.
+func progOf(chords ...[]int) string {
+	s := "v13|" + itoa(len(chords)) + "|1|-1|8|ab5|2|32|0|4|120|0|0|"
+	for i, c := range chords {
+		if i > 0 {
+			s += ";"
+		}
+		s += "X,D3,0,8,0,100,0,1,"
+		for j, n := range c {
+			if j > 0 {
+				s += "."
+			}
+			s += itoa(n) + ":100"
+		}
 	}
-	root := at(e7Root, LaneRange{})
-	up := at(e7Up, root)
-	if up == root {
-		t.Fatal("E7 inverted up past the window's top: the window must grow")
+	return s
+}
+
+// The voicings the real core played (2026-10-17) for I-vi-IV-V in D with
+// grouping none, while one chord's inversion at a time was stepped:
+// chord 2 up three detents, chord 3 down two, chord 1 and 4 up, and every
+// one back to 0 -- the sweep that showed the lanes jumping on device.
+var sweep = [][][]int{
+	{{57, 61, 64}, {65, 69, 72}, {62, 66, 69}, {64, 68, 71}},
+	{{57, 61, 64}, {69, 72, 77}, {62, 66, 69}, {64, 68, 71}},
+	{{57, 61, 64}, {72, 77, 81}, {62, 66, 69}, {64, 68, 71}},
+	{{57, 61, 64}, {77, 81, 84}, {62, 66, 69}, {64, 68, 71}},
+	{{57, 61, 64}, {77, 81, 84}, {57, 62, 66}, {64, 68, 71}},
+	{{57, 61, 64}, {77, 81, 84}, {54, 57, 62}, {64, 68, 71}},
+	{{64, 69, 73}, {77, 81, 84}, {54, 57, 62}, {64, 68, 71}},
+	{{64, 69, 73}, {77, 81, 84}, {54, 57, 62}, {76, 80, 83}},
+	{{64, 69, 73}, {65, 69, 72}, {54, 57, 62}, {76, 80, 83}},
+	{{64, 69, 73}, {65, 69, 72}, {62, 66, 69}, {76, 80, 83}},
+	{{57, 61, 64}, {65, 69, 72}, {62, 66, 69}, {76, 80, 83}},
+	{{57, 61, 64}, {65, 69, 72}, {62, 66, 69}, {64, 68, 71}},
+}
+
+func lanesOf(t *testing.T, chords [][]int) Prog {
+	p, ok := ParseProg(progOf(chords...))
+	if !ok {
+		t.Fatal("progOf wrote a prog that does not parse")
 	}
-	if back := at(e7Root, up); back != up {
-		t.Errorf("E7 back to root position inside the grown window: lanes moved %+v -> %+v", up, back)
+	return p
+}
+
+// rows is where each note of every chord lands, in pixels.
+func rows(p Prog, w LaneRange) [][]int {
+	st := newStaff(p, "scale", w)
+	var out [][]int
+	for _, c := range p.Chords {
+		var r []int
+		for _, n := range c.Notes {
+			r = append(r, st.laneY(st.degree[n]))
+		}
+		out = append(out, r)
 	}
-	down := at(e7Down, up)
-	if down.Lo >= up.Lo {
-		t.Errorf("E7 down below the window: Lo %d, want under %d", down.Lo, up.Lo)
+	return out
+}
+
+// The rules that make the staff consistent, checked frame by frame over
+// the device sweep, twice over (the second pass is a user going on).
+func TestLanesHoldStillThroughASweep(t *testing.T) {
+	var w LaneRange
+	var prevRows [][]int
+	zooms := 0
+	for pass := 0; pass < 2; pass++ {
+		for f, chords := range sweep {
+			p := lanesOf(t, chords)
+			next := FitLanes(p, "scale", w)
+			st := newStaff(p, "scale", next)
+			for i, c := range p.Chords { // every note on screen
+				for _, n := range c.Notes {
+					if d := st.degree[n]; d <= next.Lo || d >= next.Hi {
+						t.Errorf("pass %d frame %d chord %d note %d outside lanes %d..%d (no air)", pass, f, i+1, n, next.Lo, next.Hi)
+					}
+				}
+			}
+			r := rows(p, next)
+			if w.Step != 0 {
+				if next.Step != w.Step {
+					zooms++
+					if next.Step > w.Step && pass == 0 && f < len(sweep)-1 {
+						t.Errorf("frame %d zoomed IN mid-sweep (%d -> %d px)", f, w.Step, next.Step)
+					}
+				}
+				// A chord the edit did not touch keeps its rows unless the
+				// zoom changed or the window panned.
+				if next == w {
+					for i := range chords {
+						if equalInts(chords[i], sweep[(f+len(sweep)-1)%len(sweep)][i]) && !equalInts(r[i], prevRows[i]) {
+							t.Errorf("frame %d: untouched chord %d moved %v -> %v", f, i+1, prevRows[i], r[i])
+						}
+					}
+				}
+			}
+			if pass == 1 && w.Step != 0 && next != w {
+				t.Errorf("second pass frame %d: the window still moves %+v -> %+v", f, w, next)
+			}
+			w, prevRows = next, r
+		}
 	}
-	if again := at(e7Up, down); again != down {
-		t.Errorf("every voicing seen fits now: lanes moved %+v -> %+v", down, again)
+	if zooms > 1 {
+		t.Errorf("%d zoom changes over the sweep; each one rescales every chord", zooms)
 	}
-	// A key change re-counts the degrees: fit afresh.
-	p, _ := ParseProg(progE7(e7Root))
+}
+
+// A new harmony (here: chord 2 becomes another chord, notes unchanged in
+// span) may re-frame to the zoom that fits; the same notes reached by
+// voicing edits may not.
+func TestLanesZoomInOnlyForANewHarmony(t *testing.T) {
+	wide := lanesOf(t, sweep[5]) // the widest frame of the sweep
+	w := FitLanes(wide, "scale", LaneRange{})
+	narrow := lanesOf(t, sweep[0])
+	if v := FitLanes(narrow, "scale", w); v.Step != w.Step {
+		t.Errorf("a voicing edit back to a narrow span zoomed %d -> %d px", w.Step, v.Step)
+	}
+	narrow.Chords[1].Name = "Em"
+	if h := FitLanes(narrow, "scale", w); h.Step <= w.Step {
+		t.Errorf("a new harmony with room to spare kept %d px; want a larger step", h.Step)
+	}
+}
+
+// Moving the whole progression an octave (Octave Default) pans by exactly
+// an octave when it must, so the tonic lines keep their rows; and inside
+// a window with room, the chords visibly move.
+func TestLanesPanByOctaves(t *testing.T) {
+	base := [][]int{{57, 61, 64}, {62, 66, 69}}
+	p := lanesOf(t, base)
+	w := FitLanes(p, "scale", LaneRange{})
+	up := make([][]int, len(base))
+	for i, c := range base {
+		for _, n := range c {
+			up[i] = append(up[i], n+12)
+		}
+	}
+	pu := lanesOf(t, up)
+	w2 := FitLanes(pu, "scale", w)
+	if w2.Step != w.Step {
+		t.Fatalf("an octave shift changed the zoom %d -> %d", w.Step, w2.Step)
+	}
+	st := lanesFor(p, "scale")
+	octave := st.degree[72] - st.degree[60]
+	if d := w2.Lo - w.Lo; d != 0 && d%octave != 0 {
+		t.Errorf("panned %d lanes for an octave shift; want a whole octave (%d)", d, octave)
+	}
+	if w2.Lo == w.Lo && rows(p, w)[0][0] == rows(pu, w2)[0][0] {
+		t.Error("the octave shift neither moved the chords nor the window")
+	}
+}
+
+func TestLanesRefitOnKeyChange(t *testing.T) {
+	p := lanesOf(t, sweep[3])
+	w := FitLanes(p, "scale", LaneRange{})
 	p.Key = 5
-	if k := FitLanes(p, "scale", down); k.Key != 5 {
+	if k := FitLanes(p, "scale", w); k.Key != 5 {
 		t.Errorf("key change kept the old window %+v", k)
 	}
+	if f := FitLanes(lanesOf(t, sweep[0]), "scale", LaneRange{}); f.Step != fitStep(f.Hi-f.Lo) {
+		t.Errorf("a fresh fit is the largest step that shows its window: %+v", f)
+	}
+}
+
+func equalInts(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
