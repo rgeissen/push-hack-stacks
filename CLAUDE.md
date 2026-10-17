@@ -56,6 +56,10 @@ pinned in `surface/inversion_test.go` with voicings measured off the core:
   multi-chord inversion sweep -- no margin outruns a wider sweep.
 - Otherwise pan, by whole octaves when that suffices (tonic rows stay).
 - Zooms leave half an octave of headroom; key/scale/lane mode refit.
+- Undo and Redo give back the zoom their state had (`surface.ZoomMemory`,
+  user's request 2026-10-18): the window last used with each set of
+  notes is remembered, and taken back only on the frame an Undo/Redo
+  changed. Turning a value back by hand keeps the hold-still rules.
 - The window lives in `screen` (main) across frames; `Scene.Lanes` zero
   fits afresh (mockups). The register bar shows octave pans.
 

@@ -86,6 +86,9 @@ func routes(e *Engine, broker *sse.Broker[map[string]string], ctl *surfaceCtl) h
 		if i := strings.LastIndex(key, ":"); i >= 0 {
 			key = key[i+1:]
 		}
+		if (key == "undo" || key == "redo") && ctl != nil {
+			ctl.scr.Undoing() // the panel's Undo gives the zoom back too
+		}
 		if !e.Call(func(i *dsp.Instance) { i.SetParam(key, body.Value) }, time.Second) {
 			http.Error(w, "engine busy or not running", http.StatusServiceUnavailable)
 			return

@@ -52,7 +52,8 @@ Every control is in the
 - **The note lanes keep their size** while you change voicings (inversion,
   octave, colour, grouping). They zoom out only when notes would leave the
   screen. They zoom back in only when the harmony changes: a new chord, a
-  chord added or removed, or a pattern or progression loaded. To keep the
+  chord added or removed, or a pattern or progression loaded. **Undo** and
+  **Redo** also give back the zoom that the state had. To keep the
   lanes still, the view moves up or down by whole octaves. The thin bar at
   the right edge shows which part of the register is on screen.
 - **Shift + Scale follows Push's scale.** Stacks' Key and Scale then

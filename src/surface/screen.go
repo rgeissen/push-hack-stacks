@@ -316,6 +316,52 @@ func FitLanes(p Prog, mode string, prev LaneRange) LaneRange {
 	return panTo(win, lo, hi, octave)
 }
 
+// ZoomMemory gives Undo and Redo the window their state had. FitLanes
+// zooms in only for a new harmony, so an octave edit zoomed the staff out
+// and its Undo left it there, every chord on 2 px lanes (user,
+// 2026-10-18: "Undo should also restore the previous zoom"). The memory
+// keeps the window last used with each set of notes; an undo that lands
+// on one it knows takes that window back. Every other change keeps the
+// hold-still rules: a sweep that returns to earlier voicings must not
+// pump the zoom (TestLanesHoldStillThroughASweep).
+type ZoomMemory struct {
+	seen map[uint64]LaneRange
+	last uint64 // the notes of the frame before
+}
+
+// Fit is FitLanes for one frame. undo says an Undo or Redo was just
+// fired; used reports that this frame was the one it changed, so the
+// caller can stop saying so (a frame before the undo landed is not).
+func (z *ZoomMemory) Fit(p Prog, mode string, prev LaneRange, undo bool) (w LaneRange, used bool) {
+	h := notesOf(p, mode)
+	if undo && h != z.last {
+		used = true
+		if was, ok := z.seen[h]; ok && was.Key == p.Key && was.Mask == p.ScaleMask && was.Mode == mode {
+			prev = was
+		}
+	}
+	w = FitLanes(p, mode, prev)
+	if z.seen == nil || len(z.seen) >= 256 { // a session's worth; then start again
+		z.seen = map[uint64]LaneRange{}
+	}
+	z.seen[h], z.last = w, h
+	return w, used
+}
+
+// notesOf hashes what the staff draws: the key, the lanes and every note.
+func notesOf(p Prog, mode string) uint64 {
+	h := fnv.New64a()
+	h.Write([]byte(mode))
+	h.Write([]byte{byte(p.Key), byte(p.ScaleMask), byte(p.ScaleMask >> 8)})
+	for _, c := range p.Chords {
+		for _, n := range c.Notes {
+			h.Write([]byte{byte(n)})
+		}
+		h.Write([]byte{0xFF})
+	}
+	return h.Sum64()
+}
+
 // harmonyOf hashes the chords' names: what a voicing edit leaves alone.
 func harmonyOf(p Prog) uint64 {
 	h := fnv.New64a()

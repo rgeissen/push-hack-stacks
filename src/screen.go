@@ -50,6 +50,7 @@ type look struct {
 	patMode string // PATTERNS: "clear"/"copy" armed for the next slot tapped
 	toast   string
 	toastAt time.Time
+	undoAt  time.Time // an Undo or Redo was fired: the staff takes back its zoom
 }
 
 type screen struct {
@@ -67,12 +68,13 @@ type screen struct {
 	posAt     time.Time
 	hold      holdState         // the held pad's audition, for its own playhead
 	lanes     surface.LaneRange // the staff's window, kept steady between frames
-	follows   func() bool       // Key and Scale follow Push's; nil before main sets it
-	listen    *listenState      // what is played, in listen mode; nil before main sets it
-	listening bool              // listen mode: draw the played chord, not the editor
-	retake    func()            // re-takes what the mode holds besides the display; set by the surface
-	managed   func() bool       // Push Hack Home lends the surface: push-manager switches the display
-	synced    bool              // Live is connected to Stacks In
+	zoom      surface.ZoomMemory
+	follows   func() bool  // Key and Scale follow Push's; nil before main sets it
+	listen    *listenState // what is played, in listen mode; nil before main sets it
+	listening bool         // listen mode: draw the played chord, not the editor
+	retake    func()       // re-takes what the mode holds besides the display; set by the surface
+	managed   func() bool  // Push Hack Home lends the surface: push-manager switches the display
+	synced    bool         // Live is connected to Stacks In
 	stats     struct {
 		sent      int
 		total, mx time.Duration
@@ -157,6 +159,13 @@ func (s *screen) Notice(msg string) {
 	if on, _ := s.State(); !on {
 		s.pm.SetMode(0)
 	}
+}
+
+// Undoing says an Undo or Redo is about to be fired, so the staff gives
+// back the zoom of the state it returns to. Said before the fire: a frame
+// that lands between the two then still knows.
+func (s *screen) Undoing() {
+	s.Update(func(l *look) { l.undoAt = time.Now() })
 }
 
 // Toast shows a short answer to something just done.
@@ -290,7 +299,13 @@ func (s *screen) frame(img *image.NRGBA, now time.Time) {
 		Legend: l.legend, Page: l.page, PatMode: l.patMode}
 	sc.FollowScale = s.follows != nil && s.follows()
 	if pr, ok := surface.ParseProg(prog); ok {
-		s.lanes = surface.FitLanes(pr, params["lanes"], s.lanes)
+		undo := !l.undoAt.IsZero() && now.Sub(l.undoAt) < time.Second
+		var used bool
+		if s.lanes, used = s.zoom.Fit(pr, params["lanes"], s.lanes, undo); used {
+			s.mu.Lock()
+			s.look.undoAt = time.Time{}
+			s.mu.Unlock()
+		}
 		sc.Lanes = s.lanes
 	}
 	if s.pads != nil {

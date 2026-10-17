@@ -209,3 +209,37 @@ func equalInts(a, b []int) bool {
 	}
 	return true
 }
+
+// An octave edit zooms out; its Undo gives the zoom back, and Redo the
+// zoomed-out one. Turning the octave back by hand keeps the hold-still
+// rule. The user asked for this on 2026-10-18.
+func TestUndoRestoresTheZoom(t *testing.T) {
+	base := [][]int{{60, 64, 67}, {67, 71, 74}, {57, 60, 64}, {65, 69, 72}}
+	low := [][]int{{36, 40, 43}, {67, 71, 74}, {57, 60, 64}, {65, 69, 72}} // chord 1 two octaves down
+	var z ZoomMemory
+	var w LaneRange
+	for i := 0; i < 3; i++ { // a few frames of the riff as it was
+		w, _ = z.Fit(lanesOf(t, base), "scale", w, false)
+	}
+	before := w
+	w, _ = z.Fit(lanesOf(t, low), "scale", w, false)
+	if w.Step >= before.Step {
+		t.Fatalf("the octave edit did not zoom out: %d -> %d px", before.Step, w.Step)
+	}
+	zoomed := w
+	// a frame drawn before the undo landed: same notes, nothing used
+	if _, used := z.Fit(lanesOf(t, low), "scale", w, true); used {
+		t.Fatal("an undo not landed yet was used up")
+	}
+	w, used := z.Fit(lanesOf(t, base), "scale", w, true)
+	if !used || w != before {
+		t.Fatalf("Undo: window %+v (used %v), want the one before %+v", w, used, before)
+	}
+	if w, _ = z.Fit(lanesOf(t, low), "scale", w, true); w != zoomed {
+		t.Fatalf("Redo: window %+v, want the zoomed-out %+v", w, zoomed)
+	}
+	// by hand, back to the old notes: no undo, the zoom holds still
+	if h, _ := z.Fit(lanesOf(t, base), "scale", w, false); h.Step != zoomed.Step {
+		t.Fatalf("a turn by hand zoomed %d -> %d px", zoomed.Step, h.Step)
+	}
+}

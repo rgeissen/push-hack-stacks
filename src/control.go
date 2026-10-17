@@ -766,6 +766,9 @@ func (s *surfaceCtl) step(key string, n int) {
 
 // fire writes a param from a button: "toggle" flips an on/off one.
 func (s *surfaceCtl) fire(key, val, toast string) {
+	if key == "undo" || key == "redo" {
+		s.scr.Undoing()
+	}
 	s.eng.Call(func(i *dsp.Instance) {
 		if val == "toggle" {
 			cur, _ := i.GetParam(key)
