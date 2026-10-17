@@ -103,7 +103,7 @@ func (f *follower) Set(on bool, why string) {
 	if err := os.WriteFile(f.path, b, 0o644); err != nil {
 		log.Printf("follow: save: %v", err)
 	}
-	log.Printf("follow: Push's scale %s (%s)", map[bool]string{true: "on", false: "off"}[on], why)
+	log.Printf("follow: Push's scale %s%s", map[bool]string{true: "on", false: "off"}[on], why)
 	f.say(map[bool]string{true: "FOLLOWING PUSH'S SCALE", false: "NOT FOLLOWING PUSH'S SCALE"}[on] + why)
 	if on {
 		f.Sync()

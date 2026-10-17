@@ -16,8 +16,19 @@ Every control is in the
 [control matrix](https://rgeissen.github.io/push-hack-stacks/control-matrix.html)
 (`docs/control-matrix.html`, built from the code by `make matrix`).
 
-- **Shift + Help** opens Stacks on Push's screen. Shift + Help again, or
-  the LIVE tab, closes it. A closed Stacks plays nothing.
+- **Shift + Help** cycles three modes: Live, then Stacks editing (screen,
+  pads and buttons), then Stacks **listening** (the screen only), then Live
+  again. The LIVE tab also gives everything back to Live. While Stacks is
+  not editing it plays nothing.
+- **Listen mode** keeps your pads, buttons and encoders with Live. Play as
+  usual; the screen names the chord you play, animated as you add notes:
+  its name, degree and role in the key, inversion or slash bass, and what
+  your voicing leaves out (no 5th). Two notes show as an interval. Once
+  before the first use: Browser Bridge 0.4 or later active in Live
+  (Settings > MIDI > Control Scripts), and **Track** switched on for the
+  output **Stacks Listen** (Settings > MIDI). Browser Bridge adds a silent
+  track named *Stacks Listen* to your Set; it listens to the track you
+  select.
 - **Bottom two pad rows** are the chords. Press a pad to select its chord.
   Hold it to hear the chord with its rhythm, again and again, for as long
   as you hold it.
@@ -86,6 +97,13 @@ chord, the same way a keyboard does on Move.
   works. Shift + Help then shows on the screen what to update. The log
   (`/data/push-hack/logs/stacks.log`) says it too, with lines starting
   `deps:`.
+- For listen mode and Shift + Scale: Browser Bridge active in Live, 0.4 or
+  later for listening, 0.3 or later for the scale
+  ([push-hack-browser-bridge#3](https://github.com/federico-pepe/push-hack-browser-bridge/pull/3)
+  and the listen PR after it), and a push-manager with `/api/live/scale` and
+  `/api/live/listen`
+  ([#36](https://github.com/federico-pepe/ableton-push-hack/pull/36) and
+  the listen PR after it).
 - Not supported yet: Read Clip and Read Track. On Move they read the set
   file, and Live's sets are a different format. They will come through
   Browser Bridge.

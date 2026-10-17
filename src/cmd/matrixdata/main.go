@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/federico-pepe/ableton-push-hack/core/push3"
 	"github.com/rgeissen/push-hack-stacks/dsp"
@@ -110,6 +111,23 @@ func main() {
 		legend := render(surface.Scene{M: m, Params: params, Tab: 2, Held: -1, Scroll: -1, Legend: true, Page: surface.EditPage(pg)})
 		write(filepath.Join(*out, "legend_"+pn+".b64"), []byte(legend))
 	}
+
+	// Listen mode, drawn by its own renderer: Cmaj7 played as C E B -- the
+	// 5th left out, a hand's voicing -- settled, in A minor.
+	t0 := time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)
+	var held []surface.ListenNote
+	for _, n := range []int{60, 64, 71} {
+		held = append(held, surface.ListenNote{Note: n, On: t0})
+	}
+	limg := image.NewNRGBA(image.Rect(0, 0, surface.W, surface.H))
+	surface.RenderListen(limg, surface.ListenScene{Now: t0.Add(3 * time.Second), Notes: held, Name: "Cmaj7",
+		NameAt: t0, Root: 0, Bass: 0, Known: true, Omit: []int{7}, Key: 9, Mask: 0x5AD,
+		KeysLo: 48, Source: "1-Grand Piano", KeyName: "A MINOR"})
+	var lbuf bytes.Buffer
+	if err := png.Encode(&lbuf, limg); err != nil {
+		log.Fatal(err)
+	}
+	write(filepath.Join(*out, "listen.b64"), []byte(base64.StdEncoding.EncodeToString(lbuf.Bytes())))
 
 	j, err := json.MarshalIndent(struct {
 		Tabs  []tab

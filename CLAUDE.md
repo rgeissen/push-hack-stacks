@@ -55,6 +55,21 @@ pinned in `surface/inversion_test.go` with voicings measured off the core:
 - The window lives in `screen` (main) across frames; `Scene.Lanes` zero
   fits afresh (mockups). The register bar shows octave pans.
 
+## Listen mode (listen.go, surface/listen.go)
+
+- Shift + Help cycles modeLive -> modeEdit -> modeListen (control.go
+  setMode). Listening: display only, intercept off, Stacks parked, no LED
+  painting.
+- The notes come from port `Stacks Listen`, fed by Browser Bridge's listen
+  track (input = the selected track, Post FX). On Push the pads are not a
+  MIDI input another track can take; a track as input is.
+- Listened notes NEVER reach the core's MIDI input; the core only names
+  them (`chord_of:` -> name_played). One naming for staff and listen screen.
+- Motion is reported by RenderListen; the screen ticks at 33 ms only to
+  draw it, and sends nothing when the frame did not change.
+- Test on a device without hands: `cmd/notetest -dst <client:port>` plays
+  chords note by note (straight to `Stacks Listen`, or into a Live input).
+
 ## Commands
 
     make test | make vet | make build

@@ -46,6 +46,7 @@ for _t in data["Tabs"]:
     _t["Knobs"] = _t["Knobs"] or []
     _t["Actions"] = _t["Actions"] or []
 legend = {p: (DATA / f"legend_{p}.b64").read_text() for p in ("WRITE", "VOICE", "FEEL")}
+listen_png = (DATA / "listen.b64").read_text()
 missing = [k["Key"] for t in data["Tabs"] for k in t["Knobs"] if k["Key"]]
 
 desc_by_key, rng_by_key = {}, {}
@@ -103,8 +104,8 @@ ACTION_TEXT = {
 # Every other control, grouped by role. id -> (label, gesture text, LED text)
 KEYS = {
     "edit": [
-        ("shift", "Shift", "Modifier. Shift + Help opens and closes Stacks; Shift + Undo redoes; Shift + Double Loop is double time; Shift + jog changes tab.", "white"),
-        ("help", "Help", "With Shift: opens Stacks, and closes it again. Both act on the release.", "white"),
+        ("shift", "Shift", "Modifier. Shift + Help cycles Stacks' modes; Shift + Undo redoes; Shift + Double Loop is double time; Shift + jog changes tab; Shift + Scale follows Push's scale.", "white"),
+        ("help", "Help", "With Shift, on the release: Live -> Stacks (edit) -> Stacks (listen) -> Live.", "white"),
         ("delete", "Delete", "Tap: deletes the selected chord. Hold and tap a pattern pad: clears that slot.", "white"),
         ("undo", "Undo", "Undo. With Shift: redo.", "white"),
         ("add", "Add", "Inserts a copy of the selected chord after it.", "white"),
@@ -438,7 +439,7 @@ scenes = "".join(
             for s in ("1/8t", "1/16", "1/16t", "1/32", "1/32t"))
 
 notes = [
-    ("Shift + Help opens it, and closes it.", "Both on the release. Taking the surface mid-press left Push believing Shift was still held, and Play became Shift + Play."),
+    ("Shift + Help cycles three modes.", "Live, then Stacks editing (screen, pads, buttons), then Stacks listening (the screen only), then Live again. All on the release: taking the surface mid-press left Push believing Shift was still held."),
     ("Live keeps the transport.", "Play, Record, Metronome, Tap Tempo, the tempo and volume encoders go to Live, with Live's own LEDs. Stacks follows Live's clock."),
     ("Closed is parked.", "When you close Stacks it stops playing along with Live; opening gives Run back. A stamp that is armed still plays."),
     ("Hold a chord pad to hear it.", "The chord loops with its rhythm while you hold the pad, and a playhead runs inside it. Tapping only selects."),
@@ -450,6 +451,8 @@ notes = [
     ("Sync once, in Live.", "Settings > MIDI > Stacks In > Sync on. Without it Stacks cannot follow Play and Stop; the screen says so while Run is on."),
     ("An older Push Hack is named, not hidden.", "If push-manager lacks pass-through buttons or raw frames, Shift + Help shows what to update. Playing into Live still works."),
     ("Shift + Scale follows Push's scale.", "Stacks' Key and Scale follow the scale set with Push's Scale button, marked FROM PUSH on MAIN. A scale Stacks lacks keeps Stacks' and follows the key. Needs Browser Bridge 0.3, active in Live."),
+    ("Listen mode names what you play.", "Your pads stay with Live; the screen names the chord, with its degree, inversion and what is left out. Played voicings count: no 5th, a slash bass, add11, 7#11, two notes as an interval."),
+    ("The power button always works.", "push-manager gives the screen and buttons back to Push the moment you press it, and at every start, so Live's own questions can be answered."),
     ("Two ports, found by Live.", "Stacks Out carries the chords to the selected track. Stacks In carries Live's clock in."),
 ]
 notes_html = "".join(f'<div class="note-card"><h3>{e(h)}</h3><p>{e(p)}</p></div>' for h, p in notes)
@@ -510,6 +513,18 @@ page = f"""<title>Stacks Push Matrix</title>
   <p class="eyebrow">Pads &mdash; three pages, picked by the scene buttons</p>
   <p class="lede">The bottom two rows are always the chords and the top two always the patterns. The middle four write the selected chord, and change with the page. Holding a scene button shows the screen below; the table is the same map, with the pads' LED colours.</p>
   {''.join(page_html)}
+
+  <p class="eyebrow">Listen mode &mdash; Shift + Help, twice</p>
+  <p class="lede">The pads, buttons and encoders stay with Live: play your instrument as usual. The screen names the chord being played, on split-flap tiles that flip as you add a note (C, CMAJ, CMAJ7), with its degree and role in the key, its inversion or slash bass, and what a voicing leaves out. One tile per note drops in and latches; the keys go down, the root in amber. Below: C E B in A minor, a Cmaj7 without its 5th.</p>
+  <figure class="padpage">
+    <figcaption><b>LISTEN</b> &middot; the device renderer's own frame</figcaption>
+    <img class="legend-img" alt="Push's screen in listen mode: CMAJ7 on flap tiles, degree III, tonic, root position, no 5th; tiles R, 3, 7; a keyboard with C, E and B down" src="data:image/png;base64,{listen_png}">
+  </figure>
+  <div class="tablewrap"><table class="btns"><tbody>
+    <tr class="grp"><th colspan="2">Once, before the first use</th></tr>
+    <tr><th>Browser Bridge</th><td>Version 0.4 or later, active in a Control Scripts slot (Settings &gt; MIDI). It keeps a silent track, <code>Stacks Listen</code>, whose input follows the track you select.</td></tr>
+    <tr><th>Stacks Listen</th><td>In Settings &gt; MIDI, switch <b>Track</b> on for the output <code>Stacks Listen</code>. The screen says so while it is off.</td></tr>
+  </tbody></table></div>
 
   <p class="eyebrow">Every button</p>
   <div class="tablewrap"><table class="btns"><tbody>{''.join(btn_rows)}</tbody></table></div>
