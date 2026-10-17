@@ -109,10 +109,15 @@ prints how late the block timer woke, so timing is measured, not assumed.
 
 ### core version
 
-`src/go.mod` pins `core` to a tagged version. Until a tag carries the new
-raw-MIDI helpers ([#31](https://github.com/federico-pepe/ableton-push-hack/pull/31),
-[#32](https://github.com/federico-pepe/ableton-push-hack/pull/32)), a local
-`go.work` (not committed) points at `../ableton-push-hack/core`:
+`src/go.mod` pins `core`. Until the Push Hack PR that adds pass-through
+buttons and raw frames
+([#33](https://github.com/federico-pepe/ableton-push-hack/pull/33)) is
+merged and tagged, a `replace` points at that PR's commit on a fork. When
+a `core/vX.Y.Z` tag carries it, pin the tag and delete the `replace`.
+
+To work on `core` and Stacks together, a local `go.work` (not committed)
+can point at a checkout next to this one. `make` mounts
+`../ableton-push-hack` into the build container for that:
 
 ```
 go 1.25.0
@@ -120,3 +125,17 @@ go 1.25.0
 use ./src
 use ../ableton-push-hack/core
 ```
+
+### Releases
+
+A `v*` tag that matches `hack.json`'s `version` runs
+`.github/workflows/release.yml`. It tests, builds the static binary,
+publishes `stacks.tar.gz` and updates `release.json`, which Push Hack
+Catalog reads. CI (`ci.yml`) runs the tests on every push and checks that
+`src/upstream/stacks/` matches schwung-stacks at `UPSTREAM_REF`.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Third-party code and its licenses (Schwung's
+headers, the Push Hack core, Go) are listed in
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

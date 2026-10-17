@@ -1,0 +1,30 @@
+name: CI
+
+# Every push and PR: the Go tests (they drive the real C core), vet, and a
+# check that src/upstream/stacks/ is exactly schwung-stacks at UPSTREAM_REF
+# -- the vendored copy is never edited here.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: rgeissen/schwung-stacks
+          path: schwung-stacks
+          fetch-depth: 0
+
+      - name: Vendored Stacks matches UPSTREAM_REF
+        run: STACKS_REPO="$PWD/schwung-stacks" ./scripts/sync-stacks.sh --check
+
+      - name: Vet and test
+        run: |
+          docker run --rm -v "$PWD":/w -w /w/src -e CGO_ENABLED=1 -e GOFLAGS=-buildvcs=false golang:1.25 \
+            sh -c 'go vet ./... && go test ./...'

@@ -1,0 +1,73 @@
+name: Release
+
+# A v* tag builds stacks for Push 3, publishes stacks.tar.gz as a GitHub
+# Release, and points release.json at it -- the file push-catalog reads.
+#
+# Stacks hosts a C core, so it is a cgo binary, and CGO_ENABLED=0 (the
+# catalog guide's recipe) is not an option. It is linked STATICALLY in the
+# same golang image as `make build`: a dynamic cgo binary built on the
+# runner's glibc fails to exec on Push 3 (glibc 2.35).
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify version match
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          HACK_VERSION=$(python3 -c 'import json;print(json.load(open("hack.json"))["version"])')
+          if [ "$TAG_VERSION" != "$HACK_VERSION" ]; then
+            echo "ERROR: tag $TAG_VERSION does not match hack.json version $HACK_VERSION"
+            exit 1
+          fi
+
+      - name: Test and build (static cgo, linux/amd64)
+        run: |
+          docker run --rm -v "$PWD":/w -w /w/src -e CGO_ENABLED=1 -e GOFLAGS=-buildvcs=false golang:1.25 sh -c '
+            go vet ./... &&
+            go test ./... &&
+            go build -trimpath -tags netgo,osusergo \
+              -ldflags "-s -w -linkmode external -extldflags -static" -o ../stacks .'
+          file stacks
+          file stacks | grep -q "statically linked" || { echo "ERROR: stacks is not static"; exit 1; }
+
+      - name: Package
+        run: |
+          mkdir -p dist/stacks
+          cp stacks hack.json LICENSE THIRD_PARTY_LICENSES.md dist/stacks/
+          chmod +x dist/stacks/stacks
+          tar -czf stacks.tar.gz -C dist stacks
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: stacks.tar.gz
+
+      - name: Commit release.json
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          RELEASED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git fetch origin main
+          git checkout -f main
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          cat > release.json << EOF
+          {
+            "version": "${VERSION}",
+            "download_url": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/stacks.tar.gz",
+            "released_at": "${RELEASED_AT}"
+          }
+          EOF
+          git add release.json
+          git commit -m "chore: release.json for ${{ github.ref_name }}" || echo "No changes to commit"
+          git push origin main

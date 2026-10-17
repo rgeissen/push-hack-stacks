@@ -5,7 +5,7 @@
 # No service is registered: a catalog install does that.
 #
 #   ./scripts/deploy.sh            # push.local
-#   ./scripts/deploy.sh 192.168.0.134
+#   ./scripts/deploy.sh 192.168.1.20
 #   ./scripts/deploy.sh push.local stop
 set -euo pipefail
 

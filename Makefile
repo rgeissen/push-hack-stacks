@@ -2,7 +2,7 @@
 # binary is linked STATICALLY: a dynamic one built on a newer glibc fails
 # to exec on the device. Everything runs in an amd64 Go container.
 #
-# go.work (local, not committed) points core at ../ableton-push-hack/core;
+# An optional go.work (local, not committed) points core at ../ableton-push-hack/core;
 # both repos are mounted so it resolves inside the container.
 
 IMAGE   ?= golang:1.25
