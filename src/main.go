@@ -21,6 +21,7 @@ import (
 	"github.com/federico-pepe/ableton-push-hack/core/alsaseq"
 	"github.com/federico-pepe/ableton-push-hack/core/hackcfg"
 	"github.com/federico-pepe/ableton-push-hack/core/httpx"
+	"github.com/federico-pepe/ableton-push-hack/core/pmclient"
 	"github.com/federico-pepe/ableton-push-hack/core/sse"
 	"github.com/rgeissen/push-hack-stacks/surface"
 )
@@ -62,6 +63,9 @@ func main() {
 	scrDone.Add(1)
 	go func() { defer scrDone.Done(); scr.run(ctx.Done()) }()
 	go ctl.deps.run(ctx.Done())
+	ctl.follow = newFollower(pmclient.New("http://127.0.0.1:7701"), engineParams{eng}, *dataDir, scr.Toast)
+	scr.follows = ctl.follow.On
+	go ctl.follow.run(ctx.Done())
 
 	// HTTP first: the panel answers during the boot-settle wait.
 	srv := httpx.NewServer(fmt.Sprintf(":%d", cfg.Port), routes(eng, broker, ctl))

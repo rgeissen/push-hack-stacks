@@ -115,7 +115,7 @@ KEYS = {
         ("capture", "Capture", "Stamp: arms one lap for Live to record.", "white"),
         ("octup", "Octave +", "Clip Octave up: everything that sounds, one octave.", "white"),
         ("octdn", "Octave -", "Clip Octave down.", "white"),
-        ("scale", "Scale", "Jumps to the MAIN tab, where Key and Scale are.", "white"),
+        ("scale", "Scale", "Jumps to the MAIN tab, where Key and Scale are. With Shift: Stacks' Key and Scale follow Push's scale (Browser Bridge 0.3 in Live); turning Stacks' Key or Scale stops following.", "white"),
     ],
     "nav": [
         ("up", "Up", "Previous editor page (WRITE, VOICE, FEEL). Lit only when there is one.", "cond"),
@@ -449,6 +449,7 @@ notes = [
     ("Slots show their chords.", "A used pattern slot shows its chord count, bars and first chords. CLEAR SLOT or COPY TO SLOT, then tap the slot."),
     ("Sync once, in Live.", "Settings > MIDI > Stacks In > Sync on. Without it Stacks cannot follow Play and Stop; the screen says so while Run is on."),
     ("An older Push Hack is named, not hidden.", "If push-manager lacks pass-through buttons or raw frames, Shift + Help shows what to update. Playing into Live still works."),
+    ("Shift + Scale follows Push's scale.", "Stacks' Key and Scale follow the scale set with Push's Scale button, marked FROM PUSH on MAIN. A scale Stacks lacks keeps Stacks' and follows the key. Needs Browser Bridge 0.3, active in Live."),
     ("Two ports, found by Live.", "Stacks Out carries the chords to the selected track. Stacks In carries Live's clock in."),
 ]
 notes_html = "".join(f'<div class="note-card"><h3>{e(h)}</h3><p>{e(p)}</p></div>' for h, p in notes)

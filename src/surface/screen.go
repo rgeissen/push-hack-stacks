@@ -50,19 +50,20 @@ const (
 // Scene is everything one frame needs. Params is the module's flat state
 // map, exactly as the Tool tab gets it.
 type Scene struct {
-	M       *Manifest
-	Params  map[string]string
-	Tab     int       // index into M.Banks, or TabPatterns
-	Touched int       // encoder being touched, -1 none
-	Head    float64   // playhead in units, interpolated between reads
-	Toast   string    // a transient answer to something just done
-	Blink   bool      // the slow blink phase, for ARMED
-	Held    int       // chord index a pad is holding (auditioning), -1 none
-	Scroll  int       // start of the page's long editor row, -1 keeps the value in view
-	Legend  bool      // a scene button is held: draw the pad map of Page instead
-	Page    EditPage  // the editor page the pads show
-	Lanes   LaneRange // the staff's window, from FitLanes; zero fits it afresh
-	PatMode string    // PATTERNS: "clear" or "copy" armed for the next slot tapped, "" none
+	M           *Manifest
+	Params      map[string]string
+	Tab         int       // index into M.Banks, or TabPatterns
+	Touched     int       // encoder being touched, -1 none
+	Head        float64   // playhead in units, interpolated between reads
+	Toast       string    // a transient answer to something just done
+	Blink       bool      // the slow blink phase, for ARMED
+	Held        int       // chord index a pad is holding (auditioning), -1 none
+	Scroll      int       // start of the page's long editor row, -1 keeps the value in view
+	Legend      bool      // a scene button is held: draw the pad map of Page instead
+	Page        EditPage  // the editor page the pads show
+	Lanes       LaneRange // the staff's window, from FitLanes; zero fits it afresh
+	PatMode     string    // PATTERNS: "clear" or "copy" armed for the next slot tapped, "" none
+	FollowScale bool      // Key and Scale follow Push's scale (Shift + Scale)
 }
 
 const (
@@ -156,6 +157,9 @@ func drawEncoders(img *image.NRGBA, s Scene) {
 			labelCol = Focus
 		}
 		text.Draw(img, x+8, encY+12, text.Truncate(p.Label(), 15), labelCol)
+		if s.FollowScale && (key == "key" || key == "scale") {
+			right(img, x+ColW-8, encY+12, "FROM PUSH", Focus) // set by Push's Scale button
+		}
 
 		if unavailable[key] {
 			text.Draw(img, x+8, encY+28, "NOT ON PUSH YET", Dim)

@@ -60,14 +60,15 @@ type screen struct {
 	on   bool
 	look look
 
-	pads   func(surface.Scene, surface.EditPage) // LED painter, set by the surface
-	last   uint64                                // hash of the last frame sent
-	pos    int                                   // last whole-unit position, for interpolation
-	posAt  time.Time
-	hold   holdState         // the held pad's audition, for its own playhead
-	lanes  surface.LaneRange // the staff's window, kept steady between frames
-	synced bool              // Live is connected to Stacks In
-	stats  struct {
+	pads    func(surface.Scene, surface.EditPage) // LED painter, set by the surface
+	last    uint64                                // hash of the last frame sent
+	pos     int                                   // last whole-unit position, for interpolation
+	posAt   time.Time
+	hold    holdState         // the held pad's audition, for its own playhead
+	lanes   surface.LaneRange // the staff's window, kept steady between frames
+	follows func() bool       // Key and Scale follow Push's; nil before main sets it
+	synced  bool              // Live is connected to Stacks In
+	stats   struct {
 		sent      int
 		total, mx time.Duration
 		next      time.Time
@@ -256,6 +257,7 @@ func (s *screen) frame(img *image.NRGBA, now time.Time) {
 	sc := surface.Scene{M: s.man, Params: params, Tab: l.tab, Touched: l.touched, Head: head,
 		Blink: now.UnixMilli()/500%2 == 1, Toast: toast, Held: l.held, Scroll: l.scroll,
 		Legend: l.legend, Page: l.page, PatMode: l.patMode}
+	sc.FollowScale = s.follows != nil && s.follows()
 	if pr, ok := surface.ParseProg(prog); ok {
 		s.lanes = surface.FitLanes(pr, params["lanes"], s.lanes)
 		sc.Lanes = s.lanes

@@ -37,6 +37,12 @@ Every control is in the
   chord added or removed, or a pattern or progression loaded. To keep the
   lanes still, the view moves up or down by whole octaves. The thin bar at
   the right edge shows which part of the register is on screen.
+- **Shift + Scale follows Push's scale.** Stacks' Key and Scale then
+  follow the scale you set with Push's Scale button, within a second, and
+  the MAIN tab marks them FROM PUSH. A scale Stacks does not have (it has
+  13, Live about 30) keeps Stacks' scale and follows the key only. Turning
+  Stacks' own Key or Scale stops following. Needs Browser Bridge 0.3 or
+  later, active in Live (Settings > MIDI > Control Scripts).
 - **Inversion shows AUTO** when Voice Grouping is a "dyn" mode. Then
   Stacks picks each chord's inversion itself, so the chord moves as little
   as possible from the chord before. The first chord, and a chord after a

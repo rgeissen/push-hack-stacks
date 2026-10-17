@@ -37,11 +37,12 @@ const (
 )
 
 type surfaceCtl struct {
-	deps *deps // what taking the surface needs of the framework
-	eng  *Engine
-	scr  *screen
-	man  *surface.Manifest
-	pm   *pmclient.Client
+	deps   *deps     // what taking the surface needs of the framework
+	follow *follower // Key and Scale following Push's scale; nil until main sets it
+	eng    *Engine
+	scr    *screen
+	man    *surface.Manifest
+	pm     *pmclient.Client
 
 	mu     sync.Mutex
 	c      *alsaseq.Client // nil until MIDI is up
@@ -329,10 +330,14 @@ func (s *surfaceCtl) cc(cc, val uint8) {
 			}
 		}
 
-	case cc == push3.CCScale: // Key and Scale live on MAIN
-		if pressed {
-			s.scr.Update(func(l *look) { l.tab = 0 })
+	case cc == push3.CCScale: // Key and Scale live on MAIN; Shift + Scale follows Push's
+		if !pressed {
+			return
 		}
+		if s.shift && s.follow != nil {
+			s.follow.Set(!s.follow.On(), "")
+		}
+		s.scr.Update(func(l *look) { l.tab = 0 })
 
 	case cc == push3.CCDelete:
 		if pressed {
@@ -473,6 +478,10 @@ func (s *surfaceCtl) turn(i, delta, tab int) {
 	p, ok := s.man.Params[key]
 	if key == "" || !ok || unavailable(key) {
 		return
+	}
+	if (key == "key" || key == "scale") && s.follow != nil && s.follow.On() {
+		// Your own turn wins: following would undo it within a second.
+		s.follow.Set(false, ": YOU TURNED "+p.Label())
 	}
 	if p.Trigger { // fires once per gesture, either direction
 		if time.Since(s.lastTrig[i]) > trigCooldown {
