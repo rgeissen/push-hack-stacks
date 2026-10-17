@@ -879,17 +879,23 @@ func frame(img *image.NRGBA, x, y, w, h int, col color.NRGBA) {
 // drawAccidental draws a flat or sharp as pixels: the face is ASCII only,
 // and "B" for flat would read as the note B.
 func drawAccidental(img *image.NRGBA, x, baseline, acc int, col color.NRGBA) {
+	drawAccidentalK(img, x, baseline, acc, col, 1)
+}
+
+// drawAccidentalK is drawAccidental at k times the size, for 2x labels.
+func drawAccidentalK(img *image.NRGBA, x, baseline, acc int, col color.NRGBA, k int) {
+	r := func(dx, dy, w, h int) { gfx.FillRect(img, x+dx*k, baseline+dy*k, w*k, h*k, col) }
 	if acc < 0 { // flat: a stem and a bowl
-		gfx.FillRect(img, x, baseline-9, 1, 9, col)
-		gfx.FillRect(img, x+1, baseline-4, 2, 1, col)
-		gfx.FillRect(img, x+3, baseline-3, 1, 2, col)
-		gfx.FillRect(img, x+1, baseline-1, 2, 1, col)
+		r(0, -9, 1, 9)
+		r(1, -4, 2, 1)
+		r(3, -3, 1, 2)
+		r(1, -1, 2, 1)
 		return
 	}
-	gfx.FillRect(img, x+1, baseline-9, 1, 9, col) // sharp
-	gfx.FillRect(img, x+3, baseline-9, 1, 9, col)
-	gfx.FillRect(img, x, baseline-6, 5, 1, col)
-	gfx.FillRect(img, x, baseline-3, 5, 1, col)
+	r(1, -9, 1, 9) // sharp
+	r(3, -9, 1, 9)
+	r(0, -6, 5, 1)
+	r(0, -3, 5, 1)
 }
 
 func itoa(n int) string {

@@ -124,27 +124,35 @@ func routes(e *Engine, broker *sse.Broker[map[string]string], ctl *surfaceCtl) h
 	// {"on": true, "tab": 2}. tab is the bank (0 MAIN .. 5 CLIP, 6 PATTERNS).
 	mux.HandleFunc("POST /api/screen", func(w http.ResponseWriter, r *http.Request) {
 		body := struct {
-			On  bool `json:"on"`
-			Tab *int `json:"tab"`
+			On   bool   `json:"on"`
+			Tab  *int   `json:"tab"`
+			Mode string `json:"mode"` // "listen": the screen only (listen mode)
 		}{}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&body); err != nil {
-			http.Error(w, `want {"on": bool, "tab": n}`, http.StatusBadRequest)
+			http.Error(w, `want {"on": bool, "tab": n, "mode": "edit"|"listen"}`, http.StatusBadRequest)
 			return
 		}
 		tab := -1
 		if body.Tab != nil {
 			tab = *body.Tab
 		}
-		if err := ctl.SetActive(body.On, tab); err != nil {
+		m := modeLive
+		switch {
+		case body.On && body.Mode == "listen":
+			m = modeListen
+		case body.On:
+			m = modeEdit
+		}
+		if err := ctl.setMode(m, tab); err != nil {
 			http.Error(w, "push-manager: "+err.Error(), http.StatusBadGateway)
 			return
 		}
 		on, t := ctl.scr.State()
-		httpx.JSON(w, map[string]any{"on": on, "tab": t})
+		httpx.JSON(w, map[string]any{"on": on, "tab": t, "mode": modeNames[ctl.mode()]})
 	})
 	mux.HandleFunc("GET /api/screen", func(w http.ResponseWriter, r *http.Request) {
 		on, t := ctl.scr.State()
-		httpx.JSON(w, map[string]any{"on": on, "tab": t})
+		httpx.JSON(w, map[string]any{"on": on, "tab": t, "mode": modeNames[ctl.mode()]})
 	})
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {

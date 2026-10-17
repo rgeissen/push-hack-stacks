@@ -37,22 +37,23 @@ const (
 )
 
 type surfaceCtl struct {
-	deps   *deps     // what taking the surface needs of the framework
-	follow *follower // Key and Scale following Push's scale; nil until main sets it
+	deps   *deps        // what taking the surface needs of the framework
+	follow *follower    // Key and Scale following Push's scale; nil until main sets it
+	listen *listenTrack // the listen track in Live; nil until main sets it
 	eng    *Engine
 	scr    *screen
 	man    *surface.Manifest
 	pm     *pmclient.Client
 
-	mu     sync.Mutex
-	c      *alsaseq.Client // nil until MIDI is up
-	push   alsaseq.Addr
-	active bool
+	mu        sync.Mutex
+	c         *alsaseq.Client // nil until MIDI is up
+	push      alsaseq.Addr
+	active    bool
+	listening bool // listen mode: the screen only, pads and buttons with Live
 
 	// Control goroutine only.
 	shift, del, delUsed bool
 	help, pendingTake   bool // Shift + Help seen; take once both are up
-	pendingRelease      bool // Shift + Help while active; give back once both are up
 	acc                 [8]int
 	lastTrig            [8]time.Time
 	padAt               map[uint8]time.Time
@@ -109,40 +110,76 @@ func (s *surfaceCtl) attach() error {
 	return nil
 }
 
-// SetActive takes the surface or gives it back.
+// The surface's three modes, cycled by Shift + Help: Live has everything;
+// Stacks owns the screen, pads and buttons (edit); Stacks has only the
+// screen and names the chord being played (listen).
+const (
+	modeLive = iota
+	modeEdit
+	modeListen
+)
+
+var modeNames = []string{"live", "edit", "listen"}
+
+// SetActive takes the surface for editing, or gives everything back.
 func (s *surfaceCtl) SetActive(on bool, tab int) error {
-	if on {
+	return s.setMode(map[bool]int{true: modeEdit, false: modeLive}[on], tab)
+}
+
+func (s *surfaceCtl) mode() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch {
+	case s.active:
+		return modeEdit
+	case s.listening:
+		return modeListen
+	}
+	return modeLive
+}
+
+func (s *surfaceCtl) setMode(m, tab int) error {
+	cur := s.mode()
+	if m != modeLive {
 		if p := s.deps.Problem(); p != "" { // say what is missing, do not half-take
 			s.deps.note(p)
 			go s.scr.Notice(p) // on the screen too, when the screen works at all
 			return errors.New(p)
 		}
+	}
+	if m == modeEdit {
 		if err := s.pm.SetMidiFilterPass(true, passToLive); err != nil {
 			return err
 		}
 	}
-	if err := s.scr.Set(on, tab); err != nil {
+	s.scr.SetListen(m == modeListen)
+	if err := s.scr.Set(m != modeLive, tab); err != nil {
 		return err
 	}
-	if !on {
-		// push-manager repaints Live's LEDs when the filter goes off.
+	if cur == modeEdit && m != modeEdit {
+		// The pads and buttons go back to Live; push-manager repaints
+		// Live's LEDs when the filter goes off.
 		if err := s.pm.SetMidiFilter(false); err != nil {
 			return err
 		}
 	}
 	s.mu.Lock()
-	s.active = on
+	s.active, s.listening = m == modeEdit, m == modeListen
 	s.mu.Unlock()
-	// Closed, Stacks is PARKED: the DSP's own rule from Move (Back parks
-	// the tool) -- Run goes off, so it stops playing along with Live's
-	// transport on whatever track is selected, unless a stamp is armed or
-	// under way; opening gives Run back. Reported on device: "whenever
-	// Stacks is closed it still plays the Stacks chords when I hit play".
-	s.set("parked", map[bool]string{true: "off", false: "on"}[on])
-	if on {
+	// Anything but editing, Stacks is PARKED: the DSP's own rule from Move
+	// (Back parks the tool) -- Run goes off, so it stops playing along with
+	// Live's transport on whatever track is selected, unless a stamp is
+	// armed or under way; opening gives Run back. Reported on device:
+	// "whenever Stacks is closed it still plays the Stacks chords when I
+	// hit play". Listening is Live playing, not Stacks.
+	s.set("parked", map[bool]string{true: "off", false: "on"}[m == modeEdit])
+	if m == modeEdit {
 		s.scr.Update(func(*look) {}) // force a frame, and with it a full LED paint
 	}
-	log.Printf("surface: %s", map[bool]string{true: "taken (Shift + Help)", false: "given back to Live"}[on])
+	if s.listen != nil && (m == modeListen) != (cur == modeListen) {
+		go s.listen.set(m == modeListen) // the listen track in Live, on or off
+	}
+	log.Printf("surface: %s", []string{"given back to Live", "taken (Shift + Help)", "listening (pads and buttons with Live)"}[m])
 	return nil
 }
 
@@ -156,6 +193,9 @@ func (s *surfaceCtl) isActive() bool {
 func (s *surfaceCtl) Close() {
 	if s.isActive() {
 		s.pm.SetMidiFilter(false)
+	}
+	if s.mode() == modeListen && s.listen != nil {
+		s.listen.set(false) // the listen track's monitoring off: nothing flows
 	}
 	s.mu.Lock()
 	if s.c != nil {
@@ -198,32 +238,23 @@ func (s *surfaceCtl) handle(msg []byte) {
 	if kind == 0xB0 && num == push3.CCHelp {
 		s.help = val > 0
 	}
-	active := s.isActive()
-	if !active {
-		// Take the surface on the RELEASE of Shift + Help, not the press:
-		// intercept switched on mid-chord hides the releases from Push3,
-		// which then believes Shift and Help are still held -- and Play
-		// became Shift + Play (seen on device: the button lit, nothing ran).
-		if kind == 0xB0 && num == push3.CCHelp && val > 0 && s.shift {
-			s.pendingTake = true
-		}
-		if s.pendingTake && !s.shift && !s.help {
-			s.pendingTake = false
-			if err := s.SetActive(true, -1); err != nil {
-				log.Printf("surface: take: %v", err)
-			}
+	// Shift + Help cycles Live -> edit -> listen -> Live, on the RELEASE,
+	// not the press: intercept switched on mid-chord hides the releases from
+	// Push3, which then believes Shift and Help are still held -- and Play
+	// became Shift + Play (seen on device: the button lit, nothing ran).
+	cur := s.mode()
+	if kind == 0xB0 && num == push3.CCHelp && val > 0 && s.shift {
+		s.pendingTake = true
+	}
+	if s.pendingTake && !s.shift && !s.help {
+		s.pendingTake = false
+		next := (cur + 1) % 3
+		if err := s.setMode(next, -1); err != nil {
+			log.Printf("surface: mode %d: %v", next, err)
 		}
 		return
 	}
-	// Shift + Help closes as it opens, on the release.
-	if kind == 0xB0 && num == push3.CCHelp && val > 0 && s.shift {
-		s.pendingRelease = true
-	}
-	if s.pendingRelease && !s.shift && !s.help {
-		s.pendingRelease = false
-		if err := s.SetActive(false, -1); err != nil {
-			log.Printf("surface: release: %v", err)
-		}
+	if cur != modeEdit { // Live has the controls; Stacks only watches for Shift + Help
 		return
 	}
 	if kind == 0xB0 && num == push3.CCShift {

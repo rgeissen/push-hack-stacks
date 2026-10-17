@@ -4744,6 +4744,38 @@ static int stk_get_param(void *instance, const char *key, char *buf, int buf_len
         }
         return snprintf(buf, buf_len, "%04x|%d", mask, k->pat_cur + 1);
     }
+    if (strncmp(key, "chord_of:", 9) == 0) {
+        /*
+         * NAME A CHORD SOMEONE ELSE IS PLAYING, the way `prog` names ours:
+         * the key carries the MIDI notes ("chord_of:52.60.64.67", any order,
+         * up to 16), the answer is NAME|ROOT|INV|BASS|KNOWN -- the name as the
+         * staff spells it (sounding root + the shape's suffix), the root and
+         * bass as pitch classes, the inversion as name_chord counts it, and
+         * KNOWN 0 when no shape has exactly these pitch classes (the name is
+         * then the bass note alone). Asked for on Push, where a listen mode
+         * names the chord played on Live's pads; one naming for both, so the
+         * listen screen can never disagree with the staff.
+         */
+        int notes[16], n = 0;
+        for (const char *c = key + 9; *c && n < 16; ) {
+            char *end;
+            long v = strtol(c, &end, 10);
+            if (end == c) break;
+            if (v >= 0 && v <= 127) notes[n++] = (int)v;
+            c = (*end == '.') ? end + 1 : end;
+        }
+        for (int i = 1; i < n; i++)                    /* ascending: bass first */
+            for (int j = i; j > 0 && notes[j - 1] > notes[j]; j--) {
+                int t = notes[j]; notes[j] = notes[j - 1]; notes[j - 1] = t;
+            }
+        if (n == 0) return snprintf(buf, buf_len, "");
+        int root, shape, inv;
+        name_chord(notes, n, &root, &shape, &inv);
+        int rpc = ((root % 12) + 12) % 12, bpc = ((notes[0] % 12) + 12) % 12;
+        int known = shape != SHAPE_SINGLE || popcount16(pc_mask(notes, n)) == 1;
+        return snprintf(buf, buf_len, "%s%s|%d|%d|%d|%d", NOTE_NAMES[rpc],
+                        known ? SHAPES[shape].suffix : "", rpc, inv, bpc, known);
+    }
     if (strcmp(key, "pat_names") == 0) {
         /*
          * WHAT IS IN EACH SLOT, so a surface can say it: sixteen fields split

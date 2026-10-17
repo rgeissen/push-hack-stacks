@@ -23,12 +23,13 @@ import (
 )
 
 const (
-	frameEvery  = 66 * time.Millisecond // ~15 fps, and only on change
-	checkEvery  = time.Second           // display mode and Sync link
-	toastFor    = 1500 * time.Millisecond
-	syncHint    = "LIVE IS NOT SENDING CLOCK: SETTINGS > MIDI > STACKS IN > SYNC ON"
-	seqClients  = "/proc/asound/seq/clients"
-	ownPortName = "\"Stacks In\""
+	frameEvery       = 66 * time.Millisecond // ~15 fps, and only on change
+	listenFrameEvery = 33 * time.Millisecond // listen mode: ~30 fps while something moves
+	checkEvery       = time.Second           // display mode and Sync link
+	toastFor         = 1500 * time.Millisecond
+	syncHint         = "LIVE IS NOT SENDING CLOCK: SETTINGS > MIDI > STACKS IN > SYNC ON"
+	seqClients       = "/proc/asound/seq/clients"
+	ownPortName      = "\"Stacks In\""
 )
 
 // holdState is the held pad's audition: which chord, and when it began.
@@ -60,15 +61,17 @@ type screen struct {
 	on   bool
 	look look
 
-	pads    func(surface.Scene, surface.EditPage) // LED painter, set by the surface
-	last    uint64                                // hash of the last frame sent
-	pos     int                                   // last whole-unit position, for interpolation
-	posAt   time.Time
-	hold    holdState         // the held pad's audition, for its own playhead
-	lanes   surface.LaneRange // the staff's window, kept steady between frames
-	follows func() bool       // Key and Scale follow Push's; nil before main sets it
-	synced  bool              // Live is connected to Stacks In
-	stats   struct {
+	pads      func(surface.Scene, surface.EditPage) // LED painter, set by the surface
+	last      uint64                                // hash of the last frame sent
+	pos       int                                   // last whole-unit position, for interpolation
+	posAt     time.Time
+	hold      holdState         // the held pad's audition, for its own playhead
+	lanes     surface.LaneRange // the staff's window, kept steady between frames
+	follows   func() bool       // Key and Scale follow Push's; nil before main sets it
+	listen    *listenState      // what is played, in listen mode; nil before main sets it
+	listening bool              // listen mode: draw the played chord, not the editor
+	synced    bool              // Live is connected to Stacks In
+	stats     struct {
 		sent      int
 		total, mx time.Duration
 		next      time.Time
@@ -96,6 +99,13 @@ func (s *screen) Set(on bool, tab int) error {
 	}
 	s.on = on
 	return nil
+}
+
+// SetListen switches the screen between the editor and the listen view.
+func (s *screen) SetListen(on bool) {
+	s.mu.Lock()
+	s.listening, s.last = on, 0
+	s.mu.Unlock()
 }
 
 func (s *screen) State() (bool, int) {
@@ -149,10 +159,10 @@ func (s *screen) Toast(msg string) {
 
 // run draws until done, then hands the display back.
 func (s *screen) run(done <-chan struct{}) {
-	t := time.NewTicker(frameEvery)
+	t := time.NewTicker(listenFrameEvery)
 	defer t.Stop()
 	img := image.NewNRGBA(image.Rect(0, 0, surface.W, surface.H))
-	var nextCheck time.Time
+	var nextCheck, nextEdit time.Time
 	for {
 		select {
 		case <-done:
@@ -165,7 +175,15 @@ func (s *screen) run(done <-chan struct{}) {
 				nextCheck = now.Add(checkEvery)
 				s.check()
 			}
-			if on, _ := s.State(); on {
+			on, _ := s.State()
+			s.mu.Lock()
+			listening := s.listening
+			s.mu.Unlock()
+			switch {
+			case on && listening:
+				s.listenFrame(img, now)
+			case on && !now.Before(nextEdit): // the editor keeps its ~15 fps
+				nextEdit = now.Add(frameEvery - listenFrameEvery/2)
 				s.frame(img, now)
 			}
 		}
@@ -266,30 +284,7 @@ func (s *screen) frame(img *image.NRGBA, now time.Time) {
 		s.pads(sc, l.page)
 	}
 	surface.Render(img, sc)
-	h := fnv.New64a()
-	h.Write(img.Pix)
-	sum := h.Sum64()
-	if sum == s.last {
-		return // nothing moved: send nothing
-	}
-	start := time.Now()
-	if err := s.pm.PushFrame(img); err != nil {
-		log.Printf("screen: %v", err)
-		return
-	}
-	d := time.Since(start)
-	s.last = sum
-	st := &s.stats
-	st.sent++
-	st.total += d
-	st.mx = max(st.mx, d)
-	if now.After(st.next) {
-		if st.sent > 0 {
-			log.Printf("screen: %d frames, send avg %v max %v", st.sent,
-				(st.total / time.Duration(st.sent)).Round(time.Microsecond), st.mx.Round(time.Microsecond))
-		}
-		st.sent, st.total, st.mx, st.next = 0, 0, 0, now.Add(time.Minute)
-	}
+	s.send(img, now)
 }
 
 // heldHead puts the playhead inside the chord a pad is holding: Stacks'
@@ -343,4 +338,62 @@ func atoiSafe(s string) int {
 		n = n*10 + int(c-'0')
 	}
 	return n
+}
+
+// send pushes a frame unless it is the one already on the screen, and
+// keeps the send-time statistics.
+func (s *screen) send(img *image.NRGBA, now time.Time) {
+	h := fnv.New64a()
+	h.Write(img.Pix)
+	sum := h.Sum64()
+	if sum == s.last {
+		return // nothing moved: send nothing
+	}
+	start := time.Now()
+	if err := s.pm.PushFrame(img); err != nil {
+		log.Printf("screen: %v", err)
+		return
+	}
+	d := time.Since(start)
+	s.last = sum
+	st := &s.stats
+	st.sent++
+	st.total += d
+	st.mx = max(st.mx, d)
+	if now.After(st.next) {
+		if st.sent > 0 {
+			log.Printf("screen: %d frames, send avg %v max %v", st.sent,
+				(st.total / time.Duration(st.sent)).Round(time.Microsecond), st.mx.Round(time.Microsecond))
+		}
+		st.sent, st.total, st.mx, st.next = 0, 0, 0, now.Add(time.Minute)
+	}
+}
+
+// listenFrame draws the chord being played (listen mode). Key and Scale
+// come from the state snapshot, so a frame costs the core nothing; the
+// core is asked only for a chord's name, when the held notes change.
+func (s *screen) listenFrame(img *image.NRGBA, now time.Time) {
+	if s.listen == nil {
+		return
+	}
+	params, ready := s.eng.Snapshot()
+	if !ready {
+		return
+	}
+	key := 0
+	for i, k := range keyNames {
+		if k == params["key"] {
+			key = i
+		}
+	}
+	mask := 0
+	for m, name := range stacksScales {
+		if name == params["scale"] {
+			mask = m
+		}
+	}
+	sc := s.listen.scene(s.eng, now, key, mask)
+	sc.KeyName = strings.ToUpper(params["key"] + " " + params["scale"])
+	surface.RenderListen(img, sc)
+	s.send(img, now)
 }

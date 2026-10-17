@@ -66,6 +66,10 @@ func main() {
 	ctl.follow = newFollower(pmclient.New("http://127.0.0.1:7701"), engineParams{eng}, *dataDir, scr.Toast)
 	scr.follows = ctl.follow.On
 	go ctl.follow.run(ctx.Done())
+	heard := newListenState()
+	scr.listen = heard
+	ctl.listen = &listenTrack{pm: pmclient.New("http://127.0.0.1:7701"), st: heard}
+	go ctl.listen.run(ctx.Done())
 
 	// HTTP first: the panel answers during the boot-settle wait.
 	srv := httpx.NewServer(fmt.Sprintf(":%d", cfg.Port), routes(eng, broker, ctl))
@@ -91,6 +95,16 @@ func main() {
 		err := in.ReadLoop(inHandler{out: eng.midi})
 		log.Printf("midi in: %v", err)
 	}()
+	// Stacks Listen: what Live's listen track plays, for the listen screen
+	// only -- never the core (listen.go).
+	lis, err := openPort("Push Hack Stacks Listen", portListen, alsaseq.CapWrite|alsaseq.CapSubsWrite)
+	if err != nil {
+		log.Fatalf("midi listen: %v", err)
+	}
+	go func() {
+		err := lis.ReadLoop(heard)
+		log.Printf("midi listen: %v", err)
+	}()
 	log.Printf("midi: %q at %d:%d, %q at %d:%d", portOut, out.Addr().Client, out.Addr().Port,
 		portIn, in.Addr().Client, in.Addr().Port)
 	if err := ctl.attach(); err != nil {
@@ -101,7 +115,8 @@ func main() {
 	if err := eng.Run(ctx, hackDir, config, newNotesOut(out)); err != nil {
 		log.Fatalf("engine: %v", err)
 	}
-	in.Close()     // ends ReadLoop
+	in.Close() // ends ReadLoop
+	lis.Close()
 	ctl.Close()    // intercept off: Live has its pads and buttons again
 	scrDone.Wait() // the display is back with Live before we go
 	// An open event stream never finishes on its own; give it a moment.
