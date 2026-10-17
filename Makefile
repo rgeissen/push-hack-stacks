@@ -14,7 +14,7 @@ DOCKER  := docker run --rm --platform linux/amd64 \
 	-w /w/push-hack-stacks/src -e CGO_ENABLED=1 -e GOFLAGS=-buildvcs=false $(IMAGE)
 LDFLAGS := -s -w -linkmode external -extldflags "-static"
 
-.PHONY: all build test vet deploy clean
+.PHONY: all build test vet deploy clean matrix
 
 all: build
 
@@ -32,3 +32,12 @@ deploy: build
 
 clean:
 	rm -f stacks
+
+# docs/control-matrix.html, from the code: cmd/matrixdata exports labels,
+# pad rows and screen renders; scripts/matrix/build.py lays them out with
+# the Move matrix's stylesheet and knob texts (../schwung-stacks).
+STACKS_REPO ?= $(abspath $(CURDIR)/../schwung-stacks)
+matrix:
+	$(DOCKER) go run ./cmd/matrixdata -state ../scripts/matrix/axis-state.json -out ../build/matrix
+	python3 -I scripts/matrix/build.py build/matrix $(STACKS_REPO)/docs/stacks-matrix.html \
+		docs/control-matrix.html $$(git rev-parse --short HEAD)

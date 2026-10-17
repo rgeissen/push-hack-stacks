@@ -12,6 +12,10 @@ browser.
 
 ## On Push
 
+Every control is in the
+[control matrix](https://rgeissen.github.io/push-hack-stacks/control-matrix.html)
+(`docs/control-matrix.html`, built from the code by `make matrix`).
+
 - **Shift + Help** opens Stacks on Push's screen. Shift + Help again, or
   the LIVE tab, closes it. A closed Stacks plays nothing.
 - **Bottom two pad rows** are the chords. Press a pad to select its chord.

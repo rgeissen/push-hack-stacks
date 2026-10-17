@@ -2,3 +2,4 @@
 /dist/
 /go.work
 /go.work.sum
+/build/
