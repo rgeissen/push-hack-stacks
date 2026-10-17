@@ -45,13 +45,15 @@ const (
 type Scene struct {
 	M       *Manifest
 	Params  map[string]string
-	Tab     int     // index into M.Banks, or TabPatterns
-	Touched int     // encoder being touched, -1 none
-	Head    float64 // playhead in units, interpolated between reads
-	Toast   string  // a transient answer to something just done
-	Blink   bool    // the slow blink phase, for ARMED
-	Held    int     // chord index a pad is holding (auditioning), -1 none
-	Scroll  int     // start of the page's long editor row, -1 keeps the value in view
+	Tab     int      // index into M.Banks, or TabPatterns
+	Touched int      // encoder being touched, -1 none
+	Head    float64  // playhead in units, interpolated between reads
+	Toast   string   // a transient answer to something just done
+	Blink   bool     // the slow blink phase, for ARMED
+	Held    int      // chord index a pad is holding (auditioning), -1 none
+	Scroll  int      // start of the page's long editor row, -1 keeps the value in view
+	Legend  bool     // a scene button is held: draw the pad map of Page instead
+	Page    EditPage // the editor page the pads show
 }
 
 const (
@@ -77,6 +79,10 @@ func (s Scene) tabs() []string {
 
 // Render draws one frame.
 func Render(img *image.NRGBA, s Scene) {
+	if s.Legend {
+		drawLegend(img, s)
+		return
+	}
 	gfx.FillRect(img, 0, 0, W, H, Ground)
 	p, ok := ParseProg(s.Params["prog"])
 	p.Playing = p.Sounding(s.Held)

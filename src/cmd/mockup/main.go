@@ -82,6 +82,9 @@ func main() {
 		if sc.pads >= 0 {
 			s := surface.Scene{M: m, Params: params, Tab: sc.tab, Held: -1, Scroll: -1}
 			write(filepath.Join(*out, sc.name+"-pads.png"), renderPads(s, surface.EditPage(sc.pads)))
+			s.Legend, s.Page = true, surface.EditPage(sc.pads) // the scene button held
+			surface.Render(img, s)
+			write(filepath.Join(*out, sc.name+"-legend@"+itoa(*scale)+"x.png"), upscale(img, *scale))
 		}
 		log.Printf("%s", sc.name)
 	}

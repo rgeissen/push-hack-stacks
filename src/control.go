@@ -278,9 +278,17 @@ func (s *surfaceCtl) cc(cc, val uint8) {
 		s.set("play", map[bool]string{true: "on", false: "off"}[pressed])
 
 	case cc >= push3.CCScene14 && cc <= push3.CCScene18:
-		if pressed {
-			s.scr.Update(func(l *look) { l.page, l.scroll = surface.EditPage(cc-push3.CCScene14), -1 })
-		}
+		// Picks the page, and while held the screen shows the pad map:
+		// what each row of that page does, before a finger lands on it.
+		pg := surface.EditPage(cc - push3.CCScene14)
+		s.scr.Update(func(l *look) {
+			switch {
+			case pressed:
+				l.page, l.scroll, l.legend = pg, -1, true
+			case l.page == pg:
+				l.legend = false
+			}
+		})
 
 	case cc == push3.CCDPadUp || cc == push3.CCDPadDown: // editor page, as Up/Down on Move
 		if pressed {
@@ -380,38 +388,22 @@ func (s *surfaceCtl) note(n, vel uint8) {
 		if i >= s.count() {
 			return
 		}
-		// A note into Stacks selects a chord by pitch class and sounds only
-		// that chord while it is held (stacks.c held_pad). `play` instead
-		// plays the progression ONWARD from the chord, so the chord you hear
-		// drifts away from the pad you hold (reported on device as "it
-		// randomly changes chord"). Pitch classes cover chords 1-12; notes
-		// 0-11 sit far below any chord voice, so the own-voice filter never
-		// takes them for Stacks' own tail. Chords 13-16 keep play-onward.
-		if i < 12 {
-			if pressed {
-				s.set("sel", strconv.Itoa(i+1))
-			}
-			s.scr.Update(func(l *look) {
-				switch {
-				case pressed:
-					l.held = i
-				case l.held == i:
-					l.held = -1
-				}
-			})
-			msg := []byte{0x90, byte(i), 100}
-			if !pressed {
-				msg = []byte{0x80, byte(i), 0}
-			}
-			s.eng.Call(func(in *dsp.Instance) { in.OnMIDI(msg, dsp.SourceExternal) }, 500*time.Millisecond)
-			return
-		}
+		// Held, a pad loops ITS chord with its rhythm (stacks.c `audition`).
+		// A note into Stacks (held_pad) sustains one strike with no figure,
+		// and `play` runs the progression onward, so the chord heard drifts
+		// off the pad held -- both tried here, both wrong for a chord pad.
+		// A second pad pressed over the first takes over; releasing the
+		// first then changes nothing.
 		if pressed {
 			s.set("sel", strconv.Itoa(i+1))
-			s.set("play", "on")
+			s.set("audition", "on")
+			s.scr.Update(func(l *look) { l.held = i })
 			return
 		}
-		s.set("play", "off")
+		if s.scr.Look().held == i {
+			s.set("audition", "off")
+			s.scr.Update(func(l *look) { l.held = -1 })
+		}
 	case row <= 5: // the editor rows: write the selected chord
 		if !pressed {
 			return

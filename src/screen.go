@@ -43,8 +43,9 @@ type look struct {
 	tab     int
 	page    surface.EditPage
 	touched int
-	held    int // chord a pad is auditioning, -1 none
-	scroll  int // start of the page's long editor row, -1 follows the value
+	held    int  // chord a pad is auditioning, -1 none
+	scroll  int  // start of the page's long editor row, -1 follows the value
+	legend  bool // a scene button is held: the screen shows the pad map
 	toast   string
 	toastAt time.Time
 }
@@ -226,7 +227,8 @@ func (s *screen) frame(img *image.NRGBA, now time.Time) {
 		toast = syncHint
 	}
 	sc := surface.Scene{M: s.man, Params: params, Tab: l.tab, Touched: l.touched, Head: head,
-		Blink: now.UnixMilli()/500%2 == 1, Toast: toast, Held: l.held, Scroll: l.scroll}
+		Blink: now.UnixMilli()/500%2 == 1, Toast: toast, Held: l.held, Scroll: l.scroll,
+		Legend: l.legend, Page: l.page}
 	if s.pads != nil {
 		s.pads(sc, l.page)
 	}

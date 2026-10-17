@@ -708,7 +708,7 @@ function parseProg(s){
       noteVel.push(isFinite(vv) && vv >= 1 && vv <= 127 ? vv : null);
     });
     p.chords.push({ name:f[0]||"", root:f[1]||"", inv:+f[2]||0, len:+f[3]||1, off:+f[4]||0,
-                    vel:+f[5]||100, mute:f[6]==="1", mask:parseInt(f[7],16)||1,
+                    vel:+f[5]||100, mute:f[6]==="1", mask:parseInt(f[7],10)||1, /* decimal: fmt_prog's %d */
                     rest:notes.length===0, notes:notes, noteVel:noteVel });
   });
   p.count = p.chords.length;

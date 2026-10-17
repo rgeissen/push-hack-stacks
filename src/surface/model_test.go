@@ -185,3 +185,31 @@ func TestLongRowScroll(t *testing.T) {
 		t.Error("a triad's six shapes fit one row; WRITE has no long row then")
 	}
 }
+
+// Ground truth from the device (2026-10-17): each rhythm set on chord 2 of
+// Am13 · E · F#m · D (chord 2 starts at unit 8, one bar long), one lap
+// played into Live's clock, note-ons recorded in units from the chord's
+// onset. The mask is the decimal value `prog` publishes.
+func TestHitsMatchWhatStacksPlays(t *testing.T) {
+	cases := []struct {
+		rhythm, mask string
+		played       []float64
+	}{
+		{"quarter", "4369", []float64{0, 2, 4, 6}},
+		{"son 3-2", "5193", []float64{0, 1.5, 3, 5, 6}},
+		{"offbeat", "17476", []float64{1, 3, 5, 7}},
+		{"tresillo", "18761", []float64{0, 1.5, 3, 4, 5.5, 7}},
+	}
+	for _, c := range cases {
+		prog := "v13|4|2|-1|8|ab5|0|32|0|4|120|0|1|" +
+			"Am13,A3,0,8,0,100,0,1,45:100;E,E4,0,8,0,100,0," + c.mask + ",52:100.56:100.59:100"
+		p, ok := ParseProg(prog)
+		if !ok {
+			t.Fatalf("%s: prog did not parse", c.rhythm)
+		}
+		got := Hits(p.Chords[1], p.Starts()[1], p.StepUnits)
+		if !reflect.DeepEqual(got, c.played) {
+			t.Errorf("%s (mask %s): drawn hits %v, played %v", c.rhythm, c.mask, got, c.played)
+		}
+	}
+}

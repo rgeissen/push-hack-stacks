@@ -76,8 +76,12 @@ func ParseProg(s string) (Prog, bool) {
 		c.Off, _ = strconv.Atoi(f[4])
 		c.Vel, _ = strconv.Atoi(f[5])
 		c.Mute = f[6] == "1"
-		m, _ := strconv.ParseInt(f[7], 16, 32)
-		c.Mask = int(m)
+		// The rhythm mask is DECIMAL (stacks.c fmt_prog prints it with %d),
+		// unlike the header's scale mask, which is hex. Read as hex it drew a
+		// different figure than the one played -- caught on device: "quarter"
+		// arrives as 4369 = 0x1111 and plays on units 0, 2, 4, 6.
+		m, _ := strconv.Atoi(f[7])
+		c.Mask = m
 		if c.Len < 1 {
 			c.Len = 1
 		}

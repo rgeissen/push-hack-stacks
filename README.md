@@ -6,8 +6,23 @@ Stacks is a chord-progression tool. It was made for Ableton Move as a
 runs the same Stacks on Ableton Push 3 Standalone, as a
 [Push Hack](https://github.com/federico-pepe/ableton-push-hack) catalog hack.
 
-Status: early. Stacks plays into Live and follows Live's transport, and you
-edit it from a browser. The screen and pad interface on Push itself is next.
+Status: early. Stacks plays into Live and follows Live's transport. You
+edit it on Push itself (screen, encoders, buttons and pads) or from a
+browser.
+
+## On Push
+
+- **Shift + Help** opens Stacks on Push's screen. Shift + Help again, or
+  the LIVE tab, closes it. A closed Stacks plays nothing.
+- **Bottom two pad rows** are the chords. Press a pad to select its chord.
+  Hold it to hear the chord with its rhythm, again and again, for as long
+  as you hold it.
+- **Middle four pad rows** edit the selected chord. Three scene buttons pick
+  the page: **1/4** is WRITE, **1/4t** is VOICE, **1/8** is FEEL. The lit
+  one is the page you are on.
+- **Hold a scene button** to see on the screen what every pad row on that
+  page does. Let go and the screen goes back.
+- **Top two pad rows** are the 16 patterns.
 
 ## What it does
 

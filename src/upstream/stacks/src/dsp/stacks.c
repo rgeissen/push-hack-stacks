@@ -1019,6 +1019,8 @@ typedef struct {
 
     /* --- pad override: a pad hit jumps to and holds that chord --- */
     int held_pad;       /* -1 = none */
+    int loop_step;      /* `audition`: the chord looping with its figure, -1 none */
+    int loop_from;      /* the pulse the audition loop started on */
     unsigned held_mask; /* which pitch classes are held from OUTSIDE, one bit each */
 
     /*
@@ -2498,6 +2500,7 @@ static void *stk_create(const char *module_dir, const char *config_json) {
     st->seed_time = 0x89ABCDEu;
     st->read_mode = 0;
     st->held_pad = -1;
+    st->loop_step = -1;
     st->held_mask = 0;
     st->pat_cur = 0;   /* slot 1 is active, and empty */
     st->cur_step = -1;
@@ -2849,7 +2852,7 @@ static int stk_tick(void *instance, int frames, int sample_rate,
      */
     int self_clocked = (!st->clock_running || !st->run) &&
         (st->preview == 2 || st->hold_run || st->force_until > st->pulse
-         || st->held_pad >= 0);
+         || st->held_pad >= 0 || st->loop_step >= 0);
     if (self_clocked) {
         float bpm = (g_host && g_host->get_bpm) ? g_host->get_bpm() : 120.0f;
         if (bpm < 20.0f || bpm > 300.0f) bpm = 120.0f;
@@ -2892,6 +2895,28 @@ static int stk_tick(void *instance, int frames, int sample_rate,
         want_step = st->held_pad;
         hold = 1;
         onset_pulse = st->pulse;
+    } else if (st->loop_step >= 0 && st->loop_step < st->prog.count) {
+        /*
+         * AUDITION: THE CHORD AS IT PLAYS, FOR AS LONG AS YOU HOLD IT.
+         *
+         * A held pad (held_pad) sustains one strike, by design; `play` runs
+         * the progression ONWARD, so the chord you hear moves off the pad
+         * you hold. Neither lets you hear a chord WITH its rhythm while you
+         * stay on it -- asked for on Push, where a chord pad is held to
+         * audition. So the chord is re-armed once per its own length, each
+         * pass a new tile (a tile is a fact), with the figure anchored to
+         * the chord's place in the bar exactly as the force-step audition
+         * anchors it.
+         */
+        int c_len = st->prog.ch[st->loop_step].len;
+        int c_clocks = UNIT_CLOCKS * (c_len < 1 ? 1 : c_len);
+        int elapsed = st->pulse - st->loop_from;
+        int tile = elapsed < 0 ? 0 : elapsed / c_clocks;
+        want_step = st->loop_step;
+        want_id = -3000 - tile * (STK_MAX_CHORDS + 1) - st->loop_step;
+        onset_pulse = st->loop_from + tile * c_clocks;
+        phase = (chord_slot_start(&st->prog, want_step)
+                 + st->prog.ch[want_step].off) * UNIT_CLOCKS;
     } else if (st->force_until > st->pulse) {
         if (st->force_step >= 0 && st->force_step < st->prog.count) {
             want_id = -2000 - st->force_step;
@@ -3768,6 +3793,7 @@ static void stk_set_param_inner(void *instance, const char *key, const char *val
             if (!st->stamp_armed && !st->stamp_once) st->run = 0;
             if (st->preview == 2) st->preview = 0;
             st->hold_run = 0;
+            st->loop_step = -1;            /* an audition does not outlive the surface */
             st->cut_pending = 1;           /* nothing rings on into Move's screen */
         } else if (!p && st->parked) {
             st->parked = 0;
@@ -3972,6 +3998,19 @@ static void stk_set_param_inner(void *instance, const char *key, const char *val
             st->prog.count--;
             if (st->sel > st->prog.count) st->sel = st->prog.count;
             st->armed_id = 0;
+        }
+    } else if (strcmp(key, "audition") == 0) {
+        /* Loop the selected chord with its rhythm while on (see the
+         * loop_step branch in tick). RETRIGGER, as `play`: a press replaces
+         * whatever rings rather than joining it. Off ends it; tick's cleanup
+         * cuts what is sounding. */
+        if (strcmp(val, "on") == 0 || atoi(val) == 1) {
+            st->loop_step = st->sel - 1;
+            st->loop_from = st->pulse;
+            st->armed_id = 0;
+            st->cut_pending = 1;
+        } else {
+            st->loop_step = -1;
         }
     } else if (strcmp(key, "play") == 0) {
         /*
