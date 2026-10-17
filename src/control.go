@@ -485,19 +485,29 @@ func (s *surfaceCtl) turn(i, delta, tab int) {
 	if span == 0 {
 		span = p.Max - p.Min + 1
 	}
-	th := 4
-	switch {
-	case span > 40:
-		th = 1
-	case span > 12:
-		th = 2
-	}
-	s.acc[i] += delta
-	n := s.acc[i] / th
-	s.acc[i] -= n * th
-	if n != 0 {
+	if n := encoderSteps(&s.acc[i], delta, span); n != 0 {
 		s.step(key, n)
 	}
+}
+
+// encoderSteps turns encoder ticks into value steps: `ticks` of them per
+// step, more for a short list, and on short and medium lists at most 2
+// ticks counted per message, so Push's acceleration cannot skip values.
+// Reported on device as too sensitive at 4/2/1 ticks per step with no cap;
+// the long lists (142 progressions, 0-100 ranges) keep their acceleration
+// so they can still be crossed. acc carries the remainder between calls.
+func encoderSteps(acc *int, delta, span int) int {
+	ticks, maxPer := 6, 2
+	switch {
+	case span > 40:
+		ticks, maxPer = 2, 64
+	case span > 12:
+		ticks = 3
+	}
+	*acc += clamp(delta, -maxPer, maxPer)
+	n := *acc / ticks
+	*acc -= n * ticks
+	return n
 }
 
 // step moves a parameter n places along its options or range, clamped.

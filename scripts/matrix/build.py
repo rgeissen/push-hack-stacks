@@ -231,7 +231,7 @@ btn_rows.insert(0, '<tr class="grp"><th colspan="3">Screen buttons and scene col
     '<tr><th>Top 8</th><td>LIVE: gives the surface back to Live, on the release. Stacks stops playing along.</td><td class="note">white</td></tr>'
     '<tr><th>Bottom 1-8</th><td>The tab\'s actions; see each bank above.</td><td class="note">white; amber while that action is on or armed</td></tr>'
     '<tr><th>1/4, 1/4t, 1/8</th><td>The pad page: WRITE, VOICE, FEEL. Hold to see the page\'s pad map on the screen.</td><td class="note">amber on the page you are on, white on the others</td></tr>'
-    '<tr><th>Encoders 1-8</th><td>The tab\'s parameters. Touch one and its label lights. A list turns a step per detent or two; a trigger fires once per turn.</td><td class="note">no LED</td></tr>')
+    '<tr><th>Encoders 1-8</th><td>The tab\'s parameters. Touch one and its label lights. A step takes six ticks on a short list, three on a medium one, two on a long one; only the long lists accelerate. A trigger fires once per turn.</td><td class="note">no LED</td></tr>')
 
 # ---- the interactive map's data ---------------------------------------------
 mapdata = {
