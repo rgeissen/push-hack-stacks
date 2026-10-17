@@ -73,7 +73,7 @@ func main() {
 		if sc.name == "07-patterns" {
 			params["patterns"] = "0a65|3" // slots 1,3,6,7,9,12 used; in slot 3
 			params["pat_names"] = "4:4:A E F#m D||4:4:A E F#m D|||6:8:Dm7 G7 Cmaj7 Am7|2:2:Am9 D9||" +
-				"1:4:-|||12:12:A E F#m D|||||"
+				"1:4:-|||12:12:A E F#m D||||"
 		}
 		params["prog"] = setHeader(params["prog"], sc)
 		img := image.NewNRGBA(image.Rect(0, 0, surface.W, surface.H))
