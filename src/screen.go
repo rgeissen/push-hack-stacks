@@ -58,6 +58,8 @@ type screen struct {
 	man *surface.Manifest
 	pm  *pmclient.Client
 
+	sending sync.Mutex // held while a frame is built and sent (quiet)
+
 	mu   sync.Mutex
 	on   bool
 	look look
@@ -108,6 +110,19 @@ func (s *screen) Set(on bool, tab int) error {
 	}
 	s.on = on
 	return nil
+}
+
+// quiet stops the frames before Stacks gives the surface back under Push
+// Hack Home, and waits for one already on its way: push-manager refuses
+// (409) a frame that arrives after the leave, and one did, on every LIVE
+// that caught a frame in flight. The blur that follows finds the screen
+// off already.
+func (s *screen) quiet() {
+	s.mu.Lock()
+	s.on = false
+	s.mu.Unlock()
+	s.sending.Lock()
+	s.sending.Unlock() //nolint:staticcheck // waiting is the point
 }
 
 // SetListen switches the screen between the editor and the listen view.
@@ -191,6 +206,7 @@ func (s *screen) run(done <-chan struct{}) {
 				nextCheck = now.Add(checkEvery)
 				s.check()
 			}
+			s.sending.Lock() // quiet waits on this: no frame after it returns
 			on, _ := s.State()
 			s.mu.Lock()
 			listening := s.listening
@@ -202,6 +218,7 @@ func (s *screen) run(done <-chan struct{}) {
 				nextEdit = now.Add(frameEvery - listenFrameEvery/2)
 				s.frame(img, now)
 			}
+			s.sending.Unlock()
 		}
 	}
 }

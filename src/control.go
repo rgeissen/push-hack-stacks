@@ -217,7 +217,12 @@ func (s *surfaceCtl) askMode(m, tab int) error {
 		if !s.focused.Load() {
 			return nil
 		}
-		return s.pm.SurfaceLeave("live")
+		s.scr.quiet() // no frame after the leave: push-manager would refuse it
+		if err := s.pm.SurfaceLeave("live"); err != nil {
+			s.scr.Set(true, -1) //nolint:errcheck // managed: no call to push-manager
+			return err
+		}
+		return nil
 	case !s.focused.Load():
 		if err := s.pm.SurfaceOpen(); err != nil {
 			return err
