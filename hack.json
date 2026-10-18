@@ -2,7 +2,7 @@
   "id": "stacks",
   "name": "Stacks",
   "version": "0.3.2",
-  "description": "Chord-progression tool, ported from the Schwung module for Ableton Move. Plays chords into Live on the selected track, follows Live's MIDI clock, runs on Push's screen, pads and buttons, and in listen mode names the chord you play on the screen. Opens from Push Hack Home (Shift + Help) with a Push Hack release that has it; with an older one, Shift + Help opens Stacks directly. The Push surface needs push-manager and push-display from a Push Hack release with pass-through buttons and raw frames; without them Stacks still plays and its browser panel works.",
+  "description": "Chord-progression tool, ported from the Schwung module for Ableton Move. Plays chords into Live on the selected track, follows Live's MIDI clock, runs on Push's screen, pads and buttons, and in listen mode names the chord you play on the screen. Opens from Push Hack Home (Shift + Help) with a Push Hack release that has it; with an older one, Shift + Help opens Stacks directly. The Push surface needs push-manager and push-display from a Push Hack release with pass-through buttons and raw frames; without them Stacks still plays and its browser panel works. Tells other apps what it plays on Stacks Harmony, so Riffs can follow its chords; PLAY CLOSED keeps it playing while another app is on screen.",
   "author": "rgeissen",
   "binary": "stacks",
   "port": 7711,

@@ -147,6 +147,11 @@ make build                      # ./stacks, static linux/amd64
 The log is `/data/push-hack/logs/stacks.log` on the Push. Once a minute it
 prints how late the block timer woke, so timing is measured, not assumed.
 
+`POST /api/param {key: "plays_closed", value: "on" | "off" | "toggle"}`
+switches PLAY CLOSED; `GET /api/state` carries `plays_closed`. It is the
+host's setting, not the core's, saved in
+`/data/push-hack/data/stacks/plays-closed.json`.
+
 Two read-only routes are there for testing what Push shows:
 `GET /api/screen` returns the mode, the tab, the editor page, whether a
 pad map is held up (`legend`), an armed slot action (`pat_mode`), the held
