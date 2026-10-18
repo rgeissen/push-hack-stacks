@@ -42,6 +42,7 @@ def move_banks(s):
 
 banks = move_banks(move)
 data = json.loads((DATA / "data.json").read_text())
+PORT = json.loads((pathlib.Path(__file__).resolve().parents[2] / "hack.json").read_text())["port"]
 for _t in data["Tabs"]:
     _t["Knobs"] = _t["Knobs"] or []
     _t["Actions"] = _t["Actions"] or []
@@ -249,6 +250,15 @@ mapdata = {
 }
 
 css_push = r"""
+.ports { margin:22px 0 0; padding:16px 18px; background:var(--panel); border:1px solid var(--line); border-radius:10px; }
+.ports__head { margin:0 0 12px; font:600 11px/1 "IBM Plex Mono", ui-monospace, monospace; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+.ports dl { margin:0; display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:14px 28px; }
+.ports dt { font:600 14px/1.3 "Chakra Petch", ui-sans-serif, sans-serif; color:var(--ink); }
+.ports dd { margin:4px 0 0; font-size:13px; line-height:1.4; color:var(--muted); }
+.ports dd code { display:block; margin-bottom:3px; font:600 17px/1.3 "IBM Plex Mono", ui-monospace, monospace; color:var(--accent); }
+.ports .own dd code { font-size:20px; }
+.ports__note { margin:14px 0 0; max-width:none; font-size:12.5px; color:var(--muted); }
+
 /* ---- Push additions: the surface map ------------------------------------
    Layout: the hardware's own order, top to bottom -- encoders, top buttons,
    screen, bottom buttons, pads with the scene column -- then the keys by
@@ -481,6 +491,16 @@ page = f"""<title>Stacks Push Matrix</title>
       <span><b>6</b>kept by Live</span>
     </div>
   </header>
+
+  <section class="ports" aria-label="Web interfaces">
+    <p class="ports__head">Web interfaces &middot; open in a browser on the same network</p>
+    <dl>
+      <div class="own"><dt>Stacks panel</dt><dd><code>http://&lt;push&gt;:{PORT}</code>The same browser panel as Stacks on Move, for the progression you play on Push.</dd></div>
+      <div><dt>Push Manager</dt><dd><code>http://&lt;push&gt;:7701</code>Fixed port. Files, display, MIDI, and every installed hack with the port it got.</dd></div>
+      <div><dt>Push Hack Catalog</dt><dd><code>http://&lt;push&gt;:7702</code>Fixed port. Installs, updates and removes hacks.</dd></div>
+    </dl>
+    <p class="ports__note"><code>&lt;push&gt;</code> is your Push's network address, for example <code>push.local</code>. {PORT} is the port in Stacks' <code>hack.json</code>. Push Hack Catalog gives each hack a port when it installs it, from 7711 up, so on your Push it can be another one: Push Manager lists it.</p>
+  </section>
 
   <p class="eyebrow">The surface</p>
   <p class="lede">Schematic, not to scale, in the hardware's order. Every label, colour and screen here comes from the code that runs on Push: the screens are the device renderer's own output for one progression (Axis, in A).</p>
