@@ -667,7 +667,7 @@ function get(k){ return vals[k]; }
 function esc(s){ return String(s).replace(/[<>&"]/g, function(c){
   return ({"<":"&lt;",">":"&gt;","&":"&amp;",'"':"&quot;"})[c]; }); }
 
-var DEMO_PROG = "v12|4|4|2|8|ab5|9|64|1|4|96|38|0|" + [
+var DEMO_PROG = "v12|4|4|2|8|5ad|9|64|1|4|96|38|0|" + [
   "Am,A3,0,16,0,100,0,1,57.60.64", "F,F3,0,16,0,100,0,1,53.57.60",
   "C,C3,0,16,0,100,0,1,48.52.55",  "G7,G3,0,8,0,100,0,1,55.59.62.65",
   "Dm,D3,0,8,0,100,1,1,50.53.57"
@@ -2196,7 +2196,16 @@ if (R){
     undo:{name:"Undo",access:"write",options:["off","on"]}
   };
   vals.scale = "Minor"; vals.root = "G3"; vals.rhythm = "son 3-2";
-  vals.ccolour = "drop2"; vals.len = "16"; vals.swing = "0"; vals.cgate = "0";
+  vals.ccolour = "drop2"; vals.len = "8"; vals.swing = "0"; vals.cgate = "0";
+  /* Every other knob at its default, as a fresh module answers: unset, a
+     control drew its minimum (Chord Vel -63, Inversion -3), which is no
+     state the module is ever in. The selected chord is the demo's G7. */
+  var dflt = { key:"A", defoct:"3", steps:"5", bars:"8", rate:"1 bar", grouping:"none", lanes:"scale",
+    genre:"none", progression:"none", common:"none", uncommon:"none", colour:"close",
+    coct:"3", family:"7th", shape:"dom7", inv:"0", off:"0", cvel:"0", cstrum:"0", cmute:"off", ctrans:"0",
+    preview:"off", velocity:"100", gate:"90", hum_vel:"0", hum_time:"0",
+    read_mode:"replace", transpose:"0", octave:"0", run:"on" };
+  Object.keys(dflt).forEach(function(k){ if (vals[k] === undefined) vals[k] = dflt[k]; });
   render();
 }
 })();

@@ -496,7 +496,7 @@ page = f"""<title>Stacks Push Matrix</title>
   <section class="ports" aria-label="Web interfaces">
     <p class="ports__head">Web interfaces &middot; open in a browser on the same network</p>
     <dl>
-      <div class="own"><dt>Stacks panel</dt><dd><code>http://&lt;push&gt;:{PORT}</code>The same browser panel as Stacks on Move, for the progression you play on Push.</dd></div>
+      <div class="own"><dt>Stacks panel</dt><dd><code>http://&lt;push&gt;:{PORT}</code>The same browser panel as Stacks on Move, for the progression you play on Push. Every region and control of it: <em>Stacks Panel</em> (schwung-stacks, docs/panel.html).</dd></div>
       <div><dt>Push Manager</dt><dd><code>http://&lt;push&gt;:7701</code>Fixed port. Files, display, MIDI, and every installed hack with the port it got.</dd></div>
       <div><dt>Push Hack Catalog</dt><dd><code>http://&lt;push&gt;:7702</code>Fixed port. Installs, updates and removes hacks.</dd></div>
     </dl>
