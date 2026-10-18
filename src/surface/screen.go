@@ -744,7 +744,10 @@ func Actions(tab int) []Action {
 			{Label: "STAMP", Key: "stamp", Value: "on", Lit: func(m map[string]string, _ Prog) bool { return m["status"] == "armed" }},
 			{Label: "CLEAR", Key: "clear", Value: "on"},
 			{Label: "RUN", Key: "run", Value: "toggle", Lit: func(m map[string]string, _ Prog) bool { return m["run"] == "on" }},
-			{}, {}, {},
+			// Plays when closed: keeps playing while another app has the
+			// surface (main package, playsclosed.go)
+			{Label: "PLAY CLOSED", Key: "plays_closed", Value: "toggle", Lit: func(m map[string]string, _ Prog) bool { return m["plays_closed"] == "on" }},
+			{}, {},
 			editActions[6], editActions[7],
 		}
 	}

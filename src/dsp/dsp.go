@@ -105,6 +105,18 @@ func (i *Instance) GetParam(key string) (string, bool) {
 	return string(i.buf[:n]), true
 }
 
+// SeqAt is the progression chord (0-based) the sequence sounds ahead clocks
+// from now, -1 when it is not running; pulse is the clock count now (-1
+// before the downbeat). For Push Hack Harmony's announcements.
+func (i *Instance) SeqAt(ahead int) (idx, pulse int) {
+	var p C.int
+	idx = int(C.sp_seq_at(i.p, C.int(ahead), &p))
+	return idx, int(p)
+}
+
+// Cur is the chord the core has armed now (0-based), -1 none.
+func (i *Instance) Cur() int { return int(C.sp_cur(i.p)) }
+
 // Render runs one block: Stacks' scheduler advances and emits notes.
 func (i *Instance) Render() {
 	C.sp_render(i.p, (*C.int16_t)(unsafe.Pointer(&i.pcm[0])), FramesPerBlock)

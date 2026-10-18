@@ -13,4 +13,8 @@ void  sp_set_param(void *inst, const char *key, const char *val);
 int   sp_get_param(void *inst, const char *key, char *buf, int buf_len);
 void  sp_render(void *inst, int16_t *out_lr, int frames);
 
+/* Push Hack Harmony: in stacks_unit.c, after the vendored core. */
+int   sp_seq_at(void *inst, int ahead, int *pulse);
+int   sp_cur(void *inst);
+
 #endif

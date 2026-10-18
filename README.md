@@ -80,10 +80,19 @@ Every control is in the
   Push Manager's menu bar links to it.
 - Saves everything (the progression, the 16 patterns, all settings) to
   `/data/push-hack/data/stacks/state.json`. A reinstall keeps it.
+- Tells other apps what it plays: the key, the scale and each chord, on the
+  port **Stacks Harmony** (Push Hack Harmony,
+  [docs/harmony-sync.md](https://github.com/federico-pepe/ableton-push-hack/blob/main/docs/harmony-sync.md)).
+  Riffs follows it by itself: with Sync on, Riffs plays over Stacks'
+  chords. Each chord change is sent a moment before it happens, so the
+  follower changes on the same beat.
+- **PLAY CLOSED** (CLIP tab, button 4): with Push Hack Home only the app on
+  Push's screen plays. Turn it on to keep Stacks playing while another app
+  (Riffs) is on screen. Off by default: closed, Stacks is silent.
 
 ## Set up on Push (once)
 
-Stacks opens two MIDI ports. Live finds both by itself.
+Stacks opens three MIDI ports. Live finds them by itself.
 
 1. **Stacks Out** is the chords. Live plays notes from it on the selected
    track. Nothing to do.
@@ -93,6 +102,10 @@ Stacks opens two MIDI ports. Live finds both by itself.
 
 You can also send notes from a Live track to Stacks In. A note selects a
 chord, the same way a keyboard does on Move.
+
+3. **Stacks Harmony** says what Stacks plays, for other apps (only SysEx,
+   no notes). Riffs connects to it by itself. Live connects to it too and
+   ignores it.
 
 ## Requires
 

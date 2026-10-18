@@ -66,7 +66,8 @@ type surfaceCtl struct {
 
 	// Control goroutine only.
 	shift, del, delUsed bool
-	help, pendingTake   bool // Shift + Help seen; take once both are up
+	closed              *playsClosed // Plays when closed; nil in tests
+	help, pendingTake   bool         // Shift + Help seen; take once both are up
 	acc                 [8]int
 	lastTrig            [8]time.Time
 	padAt               map[uint8]time.Time
@@ -251,7 +252,7 @@ func (s *surfaceCtl) apply(m, cur int) {
 	// armed or under way; opening gives Run back. Reported on device:
 	// "whenever Stacks is closed it still plays the Stacks chords when I
 	// hit play". Listening is Live playing, not Stacks.
-	s.set("parked", map[bool]string{true: "off", false: "on"}[m == modeEdit])
+	s.set("parked", onOff(s.parkedWhen(m))) // unless Plays when closed (playsclosed.go)
 	if m == modeEdit {
 		s.scr.Update(func(*look) {}) // force a frame, and with it a full LED paint
 	}
@@ -766,6 +767,10 @@ func (s *surfaceCtl) step(key string, n int) {
 
 // fire writes a param from a button: "toggle" flips an on/off one.
 func (s *surfaceCtl) fire(key, val, toast string) {
+	if key == keyPlaysClosed {
+		s.setPlaysClosed(val)
+		return
+	}
 	if key == "undo" || key == "redo" {
 		s.scr.Undoing()
 	}

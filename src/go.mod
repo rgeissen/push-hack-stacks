@@ -13,4 +13,4 @@ require (
 // #37 (listen) and #38 (Push Hack Home) are merged and tagged: core from
 // #38's branch on the fork. Replace with the new core/vX.Y.Z tag and delete
 // this (framework rule: a tag, no replace).
-replace github.com/federico-pepe/ableton-push-hack/core => github.com/rgeissen/ableton-push-hack/core v0.0.0-20261017180535-6ab4de6b5615
+replace github.com/federico-pepe/ableton-push-hack/core => github.com/rgeissen/ableton-push-hack/core v0.0.0-20261018105801-870969d14c05

@@ -38,6 +38,10 @@ func rootPC(root string) int {
 	return (pc + 12) % 12
 }
 
+// RootPC is the pitch class a chord's name or root names ("F#m7", "F#4"
+// -> 6), or -1.
+func RootPC(s string) int { return rootPC(s) }
+
 // interval is the root's distance above the key, 0..11, or -1.
 func interval(c Chord, key int) int {
 	pc := rootPC(c.Root)

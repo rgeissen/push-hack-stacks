@@ -86,6 +86,11 @@ func routes(e *Engine, broker *sse.Broker[map[string]string], ctl *surfaceCtl) h
 		if i := strings.LastIndex(key, ":"); i >= 0 {
 			key = key[i+1:]
 		}
+		if key == keyPlaysClosed && ctl != nil {
+			ctl.setPlaysClosed(body.Value)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if (key == "undo" || key == "redo") && ctl != nil {
 			ctl.scr.Undoing() // the panel's Undo gives the zoom back too
 		}

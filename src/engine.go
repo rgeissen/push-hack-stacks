@@ -60,6 +60,9 @@ type Engine struct {
 	lastPulse time.Time // the last clock, or the Start when none yet
 
 	stats timing
+
+	harm        *harmonySender // Stacks Harmony; nil without the port (tests)
+	playsClosed func() bool    // Plays when closed, read at the start
 }
 
 func newEngine(publish func(map[string]string)) *Engine {
@@ -95,10 +98,16 @@ func (e *Engine) Run(ctx context.Context, moduleDir, config string, out *notesOu
 		inst.SetParam("parked", "off")
 		inst.Destroy() // Stacks saves state synchronously here
 		out.allOff()
+		if e.harm != nil {
+			e.harm.bye()
+		}
 	}()
 	// Stacks starts with the surface closed: parked, as SetActive(false)
 	// leaves it. Applied before the first block, so nothing plays first.
 	inst.SetParam("parked", "on")
+	if e.playsClosed != nil && e.playsClosed() { // Plays when closed: the closed Stacks plays
+		inst.SetParam("parked", "off")
+	}
 
 	next := time.Now()
 	nextPoll := next
@@ -120,6 +129,9 @@ func (e *Engine) Run(ctx context.Context, moduleDir, config string, out *notesOu
 				e.lastPulse = m.at
 			}
 			inst.OnMIDI(m.msg, dsp.SourceExternal)
+			if e.harm != nil {
+				e.harm.midi(inst, m.msg[0])
+			}
 		case f := <-e.calls:
 			f(inst)
 		case <-timer.C:
@@ -132,6 +144,9 @@ func (e *Engine) Run(ctx context.Context, moduleDir, config string, out *notesOu
 			for !next.After(now) {
 				inst.Render()
 				next = next.Add(blockDur)
+			}
+			if e.harm != nil {
+				e.harm.afterRender(inst)
 			}
 			if e.xport && now.Sub(e.lastPulse) > clockTimeout {
 				log.Printf("transport: no clock from Live for %v, releasing", clockTimeout)
@@ -176,6 +191,9 @@ func (e *Engine) poll(inst *dsp.Instance, now time.Time) {
 		e.lastPlay = play
 		e.lastPush = now
 	}
+	if e.harm != nil {
+		e.harm.poll(inst, changed, now)
+	}
 	if len(changed) == 0 {
 		return
 	}
@@ -185,6 +203,15 @@ func (e *Engine) poll(inst *dsp.Instance, now time.Time) {
 	}
 	e.mu.Unlock()
 	e.publish(changed)
+}
+
+// setHostParam publishes a param the host owns, not the core (Plays when
+// closed): the panel and the Push see it like any other.
+func (e *Engine) setHostParam(k, v string) {
+	e.mu.Lock()
+	e.params[k] = v
+	e.mu.Unlock()
+	e.publish(map[string]string{k: v})
 }
 
 // Snapshot is the full map a newly connected surface starts from.

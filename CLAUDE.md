@@ -84,6 +84,19 @@ pinned in `surface/inversion_test.go` with voicings measured off the core:
 - Test on a device without hands: `cmd/notetest -dst <client:port>` plays
   chords note by note (straight to `Stacks Listen`, or into a Live input).
 
+## Stacks Harmony (harmonysync.go, playsclosed.go)
+
+- Stacks sends Push Hack Harmony (core/harmony) on its own port, never on
+  Stacks Out. Each chord change goes out `harmonyAhead` (6) clocks early,
+  from `sp_seq_at`: an accessor in `dsp/stacks_unit.c`, AFTER the vendored
+  `#include`, that walks the progression as the core's tick does.
+  `TestSeqAtPredictsTheCore` holds it to what the core arms, clock by
+  clock; if a core update changes the walk, that test fails first.
+- The core arms a chord in the block after the clock, so the sender reads
+  what is armed (`sp_cur`) only in `afterRender`, never on the clock.
+- PLAY CLOSED is the host's setting (`plays-closed.json`), not the core's:
+  closed Stacks stays parked unless it is on.
+
 ## Commands
 
     make test | make vet | make build

@@ -64,6 +64,9 @@ func main() {
 	go ctl.deps.run(ctx.Done())
 	go ctl.session(ctx.Done())    // Push Hack Home: focus and blur
 	go ctl.statusLoop(ctx.Done()) // the card in Home
+	ctl.closed = loadPlaysClosed(*dataDir)
+	eng.setHostParam(keyPlaysClosed, onOff(ctl.closed.on.Load()))
+	eng.playsClosed = ctl.closed.on.Load
 	ctl.follow = newFollower(pmClient(), engineParams{eng}, *dataDir, scr.Toast)
 	scr.follows = ctl.follow.On
 	go ctl.follow.run(ctx.Done())
@@ -106,6 +109,16 @@ func main() {
 		err := lis.ReadLoop(heard)
 		log.Printf("midi listen: %v", err)
 	}()
+	// Stacks Harmony: what Stacks plays, for Riffs and any follower
+	// (harmonysync.go). A port of its own, so Stacks Out carries notes
+	// only; Live connects to it too, and ignores the SysEx.
+	harm, err := openPort("Push Hack Stacks Harmony", portHarmony, alsaseq.CapRead|alsaseq.CapSubsRead)
+	if err != nil {
+		log.Printf("midi harmony: %v (no Stacks Harmony)", err)
+	} else {
+		defer harm.Close()
+		eng.harm = newHarmonySender(harm)
+	}
 	log.Printf("midi: %q at %d:%d, %q at %d:%d", portOut, out.Addr().Client, out.Addr().Port,
 		portIn, in.Addr().Client, in.Addr().Port)
 	if err := ctl.attach(); err != nil {

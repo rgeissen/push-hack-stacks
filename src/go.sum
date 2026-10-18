@@ -1,5 +1,5 @@
-github.com/rgeissen/ableton-push-hack/core v0.0.0-20261017180535-6ab4de6b5615 h1:lMAzlIJa9mS/U41xVH7Su9Ax9hmQ0RWUr3KKx5+DhgY=
-github.com/rgeissen/ableton-push-hack/core v0.0.0-20261017180535-6ab4de6b5615/go.mod h1:jIGdPTG4YcT5Zt8gdsKsvjW+hP32nnquSWYR1ojQ03I=
+github.com/rgeissen/ableton-push-hack/core v0.0.0-20261018105801-870969d14c05 h1:Iwqc0ulSSpipjsEmTcyO08aaLccp82xAKyZJ6VcJH9A=
+github.com/rgeissen/ableton-push-hack/core v0.0.0-20261018105801-870969d14c05/go.mod h1:jIGdPTG4YcT5Zt8gdsKsvjW+hP32nnquSWYR1ojQ03I=
 golang.org/x/image v0.41.0 h1:8wS72eGJMJaBxK6okTzd4WaXumUlTVlb753MlsSvTCo=
 golang.org/x/image v0.41.0/go.mod h1:uIc348UZMSvS5Z65CVZ7iDPaNobNFEPeJ4kbqTOszmA=
 golang.org/x/text v0.37.0 h1:Cqjiwd9eSg8e0QAkyCaQTNHFIIzWtidPahFWR83rTrc=
