@@ -163,8 +163,10 @@ each pad (`pads`, eight rows, the bottom row first) and each button
 
 - `src/upstream/stacks/` is Stacks' own code, copied from schwung-stacks at
   the commit in `UPSTREAM_REF`. Do not edit it here.
-  `./scripts/sync-stacks.sh [ref]` copies a new version, and
-  `./scripts/sync-stacks.sh --check` checks the copy.
+  `./scripts/sync-stacks.sh [ref]` copies a new version,
+  `./scripts/sync-stacks.sh --check` checks the copy, and
+  `./scripts/sync-stacks.sh --behind` says whether schwung-stacks has newer
+  commits that change the copied files (exit 3 if it has).
 - `src/dsp/` builds that code without changes, and gives it the host API
   that Schwung gives it on Move (`host.c`, `stacks_unit.c`).
 - `src/engine.go` is the one goroutine that calls into Stacks. It renders
@@ -198,7 +200,10 @@ A `v*` tag that matches `hack.json`'s `version` runs
 `.github/workflows/release.yml`. It tests, builds the static binary,
 publishes `stacks.tar.gz` and updates `release.json`, which Push Hack
 Catalog reads. CI (`ci.yml`) runs the tests on every push and checks that
-`src/upstream/stacks/` matches schwung-stacks at `UPSTREAM_REF`.
+`src/upstream/stacks/` matches schwung-stacks at `UPSTREAM_REF`. It also
+checks whether schwung-stacks has moved on: on a push or a pull request
+that is a warning; on the weekly run (Mondays) the run fails, so GitHub
+sends the owner an email.
 
 ## License
 

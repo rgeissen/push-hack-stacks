@@ -2,12 +2,17 @@ name: CI
 
 # Every push and PR: the Go tests (they drive the real C core), vet, and a
 # check that src/upstream/stacks/ is exactly schwung-stacks at UPSTREAM_REF
-# -- the vendored copy is never edited here.
+# -- the vendored copy is never edited here -- and whether schwung-stacks has
+# moved on since: a warning on a push or PR, a failed run (so GitHub mails
+# the owner) on the weekly schedule.
 
 on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "17 6 * * 1"   # Mondays: has schwung-stacks moved on?
+  workflow_dispatch:
 
 jobs:
   test:
@@ -23,6 +28,19 @@ jobs:
 
       - name: Vendored Stacks matches UPSTREAM_REF
         run: STACKS_REPO="$PWD/schwung-stacks" ./scripts/sync-stacks.sh --check
+
+      - name: Vendored Stacks is schwung-stacks' latest
+        run: |
+          set +e
+          out=$(STACKS_REPO="$PWD/schwung-stacks" ./scripts/sync-stacks.sh --behind)
+          code=$?
+          echo "$out"
+          if [ $code -eq 3 ]; then
+            echo "::warning title=Stacks is behind schwung-stacks::$(echo "$out" | head -n 1)"
+            [ "${{ github.event_name }}" = "schedule" ] && exit 1
+            exit 0
+          fi
+          exit $code
 
       - name: Vet and test
         run: |

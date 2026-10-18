@@ -6,6 +6,8 @@
 #   ./scripts/sync-stacks.sh            # HEAD of ../schwung-stacks
 #   ./scripts/sync-stacks.sh 0bccb37    # a given commit
 #   ./scripts/sync-stacks.sh --check    # exit 1 if vendored != recorded ref
+#   ./scripts/sync-stacks.sh --behind   # exit 3 if schwung-stacks has newer
+#                                       # commits that change vendored files
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -26,6 +28,24 @@ if [[ "${1:-}" == "--check" ]]; then
     done
     [[ ${bad} == 0 ]] && echo "vendored files match ${ref}"
     exit ${bad}
+fi
+
+if [[ "${1:-}" == "--behind" ]]; then
+    # Only commits that change a vendored file count: a schwung-stacks
+    # change to its docs or tests needs nothing here.
+    ref="$(cat "${DST}/UPSTREAM_REF")"
+    head="$(git -C "${SRC}" rev-parse HEAD)"
+    git -C "${SRC}" merge-base --is-ancestor "${ref}" "${head}" ||
+        { echo "UPSTREAM_REF ${ref} is not in schwung-stacks' history at ${head}"; exit 1; }
+    newer="$(git -C "${SRC}" log --oneline "${ref}..${head}" -- "${FILES[@]}")"
+    if [[ -z "${newer}" ]]; then
+        echo "up to date: no change to the vendored files since ${ref:0:7} (schwung-stacks at ${head:0:7})"
+        exit 0
+    fi
+    echo "behind schwung-stacks by $(wc -l <<<"${newer}" | tr -d ' ') commit(s) that change vendored files:"
+    echo "${newer}"
+    echo "run ./scripts/sync-stacks.sh, then make test"
+    exit 3
 fi
 
 ref="$(git -C "${SRC}" rev-parse "${1:-HEAD}")"
