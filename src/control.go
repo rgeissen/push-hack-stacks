@@ -63,6 +63,10 @@ type surfaceCtl struct {
 	push      alsaseq.Addr
 	active    bool
 	listening bool // listen mode: the screen only, pads and buttons with Live
+	// handing: the pads are being given to Live (listen), so paint nothing.
+	// push-manager clears every LED, then Live repaints; a frame painted in
+	// between put Stacks' colours back on pads Live does not resend.
+	handing atomic.Bool
 
 	// Control goroutine only.
 	shift, del, delUsed bool
@@ -233,6 +237,10 @@ func (s *surfaceCtl) askMode(m, tab int) error {
 		return nil
 	case m == cur:
 		return nil
+	}
+	if m != modeEdit {
+		s.handing.Store(true)
+		defer s.handing.Store(false)
 	}
 	if err := s.pm.SurfaceInput(m == modeEdit); err != nil {
 		return err
@@ -818,7 +826,7 @@ func (s *surfaceCtl) paint(sc surface.Scene, page surface.EditPage) {
 	s.mu.Lock()
 	c, push, active := s.c, s.push, s.active
 	s.mu.Unlock()
-	if c == nil || !active {
+	if c == nil || !active || s.handing.Load() {
 		s.leds = nil // repaint everything next time the surface is taken
 		return
 	}
