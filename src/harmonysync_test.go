@@ -13,7 +13,7 @@ import (
 	"github.com/rgeissen/push-hack-stacks/surface"
 )
 
-// harmonyFollower is what Riffs does with Stacks Harmony, at its simplest: a
+// harmonyFollower is what a follower does with Stacks Harmony, at its simplest: a
 // message heard at clock c applies at c + delta.
 type harmonyFollower struct {
 	pulse   int // the clock count now, -1 before the downbeat

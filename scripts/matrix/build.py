@@ -98,7 +98,7 @@ ACTION_TEXT = {
     "STAMP": "Arms one lap for Live to record; press Record. Lit while armed.",
     "CLEAR": "Empties the progression to a single rest in your Key.",
     "RUN": "Stacks follows Live's transport. Lit while on.",
-    "PLAY CLOSED": "Keeps Stacks playing while another app (Riffs) is on Push's screen, so Riffs can follow its chords. Off by default: closed, Stacks is silent. Lit while on.",
+    "PLAY CLOSED": "Keeps Stacks playing while another app is on Push's screen, so it can follow Stacks' chords. Off by default: closed, Stacks is silent. Lit while on.",
     "CLEAR SLOT": "Arms a clear: the next pattern pad you tap is emptied. Press again to cancel. Lit while armed.",
     "COPY TO SLOT": "Arms a copy: the next pattern pad you tap gets the current pattern. Press again to cancel. Lit while armed.",
 }

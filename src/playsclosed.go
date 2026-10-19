@@ -1,8 +1,8 @@
 package main
 
 // playsclosed.go -- Plays when closed: Stacks keeps playing along with Live
-// while another app has the surface (Push Hack Home), so Riffs, following
-// Stacks Harmony, plays over Stacks' chords. Off by default: closed Stacks
+// while another app has the surface (Push Hack Home), so an app following
+// Stacks Harmony plays over Stacks' chords. Off by default: closed Stacks
 // is parked, the rule asked for on device ("whenever Stacks is closed it
 // still plays the Stacks chords when I hit play").
 

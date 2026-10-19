@@ -1,7 +1,7 @@
 package main
 
-// harmonysync.go -- Stacks Harmony: what Stacks plays, for Riffs and any
-// other follower (Push Hack Harmony: core/harmony, docs/harmony-sync.md in
+// harmonysync.go -- Stacks Harmony: what Stacks plays, for any follower
+// (Push Hack Harmony: core/harmony, docs/harmony-sync.md in
 // ableton-push-hack).
 //
 // A port of its own, so Live never sees the SysEx. Each chord change is

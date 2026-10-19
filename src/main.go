@@ -109,7 +109,7 @@ func main() {
 		err := lis.ReadLoop(heard)
 		log.Printf("midi listen: %v", err)
 	}()
-	// Stacks Harmony: what Stacks plays, for Riffs and any follower
+	// Stacks Harmony: what Stacks plays, for any follower
 	// (harmonysync.go). A port of its own, so Stacks Out carries notes
 	// only; Live connects to it too, and ignores the SysEx.
 	harm, err := openPort("Push Hack Stacks Harmony", portHarmony, alsaseq.CapRead|alsaseq.CapSubsRead)
