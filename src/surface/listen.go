@@ -18,7 +18,8 @@ import (
 //
 //	header     0-14   LISTEN, the track listened to, the key, the way out
 //	name      16-108  the chord on flap tiles; its degree and inversion
-//	notes     16-108  one tile per note, bass first: interval and name
+//	notes     16-84   one tile per note, bass first: interval and name
+//	last      88-108  LAST: the chord played before, once released
 //	keyboard 112-158  four octaves, the held keys down
 const (
 	flapW, flapH = 30, 58
@@ -62,6 +63,8 @@ type ListenScene struct {
 	Known    bool   // a chord is named
 	Interval string // two notes: the interval ("MAJOR 3RD"); Name is then the two notes
 	Omit     []int  // the chord's notes left out, in semitones above the root
+	Last     string // the chord played before, as the board spells it; "" none
+	LastRoot int    // its root's pitch class, for its degree; -1 none
 	Key      int    // 0 = C
 	Mask     int    // the scale's pitch classes, relative to Key
 	KeysLo   int    // the keyboard's lowest note, a C; from KeyWindow
@@ -125,8 +128,36 @@ func RenderListen(img *image.NRGBA, s ListenScene) (moving bool) {
 		drawChordFacts(img, s, held, hue)
 	}
 	moving = drawNoteTiles(img, s, hue) || moving
+	drawLast(img, s)
 	moving = drawKeyboard(img, s, hue) || moving
 	return moving
+}
+
+// drawLast is the chord played before, under the note tiles: kept once its
+// pads are up, so it can be read after the board has gone blank. Quiet on
+// purpose (asked on device: not "the same attention" as the board): one
+// small line, dim, its degree dim too, nothing that moves.
+func drawLast(img *image.NRGBA, s ListenScene) {
+	if s.Last == "" {
+		return
+	}
+	y := noteY + noteH + 18
+	line := "LAST  " + text.Truncate(s.Last, 12) + "  "
+	text.Draw(img, noteX, y, line, Dim)
+	if s.LastRoot < 0 || s.LastRoot > 11 {
+		return
+	}
+	c := Chord{Root: noteNames[s.LastRoot], Notes: []int{s.LastRoot}}
+	roman, acc := Degree(c, s.Key, s.Mask)
+	if roman == "" {
+		return
+	}
+	x := noteX + text.Width(line)
+	if acc != 0 { // the strip's own flat or sharp: a "B" would read as a letter
+		drawAccidental(img, x, y-1, acc, Dim)
+		x += 6
+	}
+	text.Draw(img, x, y, roman, Dim)
 }
 
 func heldNotes(ns []ListenNote) []int {

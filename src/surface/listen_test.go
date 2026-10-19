@@ -107,3 +107,38 @@ func TestListenHeadSaysTheWayOut(t *testing.T) {
 		t.Fatal("the hint does not follow Leave")
 	}
 }
+
+// LAST is drawn under the note tiles, dim, and only when there is one.
+func TestRenderListenLast(t *testing.T) {
+	now := time.Now()
+	base := ListenScene{Now: now, Root: -1, Bass: -1, LastRoot: -1, KeysLo: 48, Key: 0, Mask: 0xAB5}
+	lit := func(s ListenScene) (n int, bright bool) {
+		img := image.NewNRGBA(image.Rect(0, 0, W, H))
+		RenderListen(img, s)
+		for y := noteY + noteH + 4; y < kbY; y++ {
+			for x := noteX; x < W; x++ {
+				c := img.NRGBAAt(x, y)
+				if c != Ground {
+					n++
+					if c == Bright || c == Ink {
+						bright = true
+					}
+				}
+			}
+		}
+		return
+	}
+	if n, _ := lit(base); n != 0 {
+		t.Errorf("no LAST, yet %d pixels drawn under the tiles", n)
+	}
+	s := base
+	s.Last, s.LastRoot = "CMAJ", 0
+	n, bright := lit(s)
+	if n == 0 || bright {
+		t.Errorf("LAST CMAJ: %d pixels, bright %v; want some, all dim", n, bright)
+	}
+	s.Last, s.LastRoot = "BBMAJ", 10 // bVII in C major: the flat glyph, dim
+	if n, bright := lit(s); n == 0 || bright {
+		t.Errorf("LAST BBMAJ: %d pixels, bright %v", n, bright)
+	}
+}

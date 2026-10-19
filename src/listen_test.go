@@ -72,3 +72,56 @@ func TestCoreNamesAPlayedChord(t *testing.T) {
 		}
 	}
 }
+
+// The board and LAST, with a namer standing in for the core.
+func TestListenBoardAndLast(t *testing.T) {
+	names := map[string]chordOf{
+		"60.64.67":    {name: "C", root: 0, bass: 0, kind: 1},
+		"60.64.67.71": {name: "Cmaj7", root: 0, bass: 0, kind: 1},
+		"57.60.65":    {name: "F", root: 5, bass: 9, inv: 1, kind: 1},
+		"60.64":       {kind: 2},
+	}
+	namer := func(held string) chordOf {
+		if c, ok := names[held]; ok {
+			return c
+		}
+		return chordOf{root: -1, bass: -1}
+	}
+	l := newListenState()
+	now := time.Now()
+	step := func(held string) {
+		now = now.Add(50 * time.Millisecond)
+		l.hear(held, now, namer)
+	}
+	step("60")
+	step("60.64")
+	step("60.64.67")
+	if l.name != "C" || l.last.name != "" {
+		t.Fatalf("C played: board %q, last %q", l.name, l.last.name)
+	}
+	step("60.64.67.71") // the same chord growing: nothing goes to LAST
+	if l.name != "Cmaj7" || l.last.name != "" {
+		t.Fatalf("Cmaj7 grown from C: board %q, last %q", l.name, l.last.name)
+	}
+	step("60.64") // lifted, still held: the board keeps the chord
+	if l.name != "Cmaj7" {
+		t.Fatalf("lifting notes flipped the board to %q", l.name)
+	}
+	step("") // every pad up: blank at once, the chord is LAST
+	if l.name != "" || l.last.name != "Cmaj7" {
+		t.Fatalf("released: board %q, last %q", l.name, l.last.name)
+	}
+	step("57.60.65")
+	if l.name != "F" || l.last.name != "Cmaj7" {
+		t.Fatalf("F played: board %q, last %q", l.name, l.last.name)
+	}
+	step("60.64.67") // straight to another chord, F not released: F is LAST
+	if l.name != "C" || l.last.name != "F" {
+		t.Fatalf("F to C: board %q, last %q", l.name, l.last.name)
+	}
+	l.clear()
+	sc := l.scene(nil, now, 0, 0xAB5)
+	if l.name != "" || l.last.name != "" || sc.Last != "" {
+		t.Fatalf("after clear: board %q, last %q", l.name, l.last.name)
+	}
+}
