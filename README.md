@@ -30,7 +30,10 @@ Every control is in the
 - **Listen mode** keeps your pads, buttons and encoders with Live. Play as
   usual; the screen names the chord you play, animated as you add notes:
   its name, degree and role in the key, inversion or slash bass, and what
-  your voicing leaves out (no 5th). Two notes show as an interval. Once
+  your voicing leaves out (no 5th). Two notes show as an interval. When
+  you let go of every pad, the name clears. **LAST**, a small dim line
+  under the notes, then shows the chord you played before, with its
+  degree. Lifting some notes while others are held keeps the name. Once
   before the first use: Browser Bridge 0.4 or later active in Live
   (Settings > MIDI > Control Scripts), and **Track** switched on for the
   output **Stacks Listen** (Settings > MIDI). Browser Bridge adds a silent
@@ -70,6 +73,9 @@ Every control is in the
   as possible from the chord before. The first chord, and a chord after a
   rest, keep their own inversion. The value you set is kept and comes back
   if you change grouping.
+- **Chord names spell their quality in full**, because Push's screen has
+  capitals only: CMAJ, CMIN, CMAJ7, BMIN7-5. A plain major chord reads
+  CMAJ, not just C.
 
 ## What it does
 

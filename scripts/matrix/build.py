@@ -462,7 +462,7 @@ notes = [
     ("Sync once, in Live.", "Settings > MIDI > Stacks In > Sync on. Without it Stacks cannot follow Play and Stop; the screen says so while Run is on."),
     ("An older Push Hack is named, not hidden.", "If push-manager lacks pass-through buttons or raw frames, Shift + Help shows what to update. Playing into Live still works."),
     ("Shift + Scale follows Push's scale.", "Stacks' Key and Scale follow the scale set with Push's Scale button, marked FROM PUSH on MAIN. A scale Stacks lacks keeps Stacks' and follows the key. Needs Browser Bridge 0.3, active in Live."),
-    ("Listen mode names what you play.", "Your pads stay with Live; the screen names the chord, with its degree, inversion and what is left out. Played voicings count: no 5th, a slash bass, add11, 7#11, two notes as an interval."),
+    ("Listen mode names what you play.", "Your pads stay with Live; the screen names the chord, with its degree, inversion and what is left out. Played voicings count: no 5th, a slash bass, add11, 7#11, two notes as an interval. The name clears when you let go; LAST, a small line under the notes, keeps the chord you played before."),
     ("The power button always works.", "push-manager gives the screen and buttons back to Push the moment you press it, and at every start, so Live's own questions can be answered."),
     ("Two ports, found by Live.", "Stacks Out carries the chords to the selected track. Stacks In carries Live's clock in."),
 ]
