@@ -44,7 +44,7 @@ func TestParseProgRejects(t *testing.T) {
 
 func TestDisplayName(t *testing.T) {
 	cases := map[string]string{
-		"A": "A", "F#m": "F#MIN", "C#m7": "C#MIN7", "Amaj7": "AMAJ7", "Am9": "AMIN9",
+		"A": "AMAJ", "Bb": "BBMAJ", "F#m": "F#MIN", "C5": "C5", "C#m7": "C#MIN7", "Amaj7": "AMAJ7", "Am9": "AMIN9",
 		"Bm7b5": "BMIN7-5", "G7b9": "G7-9", "G7#9": "G7+9", "CmMaj7": "CMINMAJ7",
 		"Dsus4": "DSUS4", "Edim7": "EDIM7", "Bbmaj7": "BBMAJ7", "Fmaj7#5": "FMAJ7+5",
 		"Cadd9": "CADD9", "Cmadd9": "CMINADD9", "": "",

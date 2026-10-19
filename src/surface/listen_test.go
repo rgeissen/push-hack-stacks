@@ -41,8 +41,8 @@ func TestBoardText(t *testing.T) {
 		want       string
 	}{
 		{"Cmaj7", 0, 0, true, DisplayName("Cmaj7")},
-		{"C", 0, 4, true, "C/E"},  // an inversion: root C, bass E
-		{"C", 0, 6, true, "C/F#"}, // a bass outside the chord
+		{"C", 0, 4, true, "CMAJ/E"},  // an inversion: root C, bass E
+		{"C", 0, 6, true, "CMAJ/F#"}, // a bass outside the chord
 		{"C", 0, 0, false, "?"},
 		{"", 0, 0, true, ""},
 	} {

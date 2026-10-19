@@ -108,7 +108,9 @@ func popcount(v int) int {
 // Stacks' rule on Move, carried over: quality is spelled in full, because
 // "F#M" could be either. Minor "m" -> "MIN", "maj" -> "MAJ", and an
 // altered tone's flat or sharp -> "-" or "+" (jazz notation: C7-9).
-// The root's own sharp stays "#".
+// The root's own sharp stays "#". A plain major triad says MAJ too: with
+// minor spelled CMIN, a bare "C" read as a chord with its quality missing
+// (asked on device, listen mode: "R-3-5 should be CMAJ or CMIN").
 func DisplayName(name string) string {
 	if name == "" {
 		return ""
@@ -146,6 +148,9 @@ func DisplayName(name string) string {
 			q.WriteString(strings.ToUpper(rest[i : i+1]))
 			i++
 		}
+	}
+	if rest == "" {
+		return root + "MAJ"
 	}
 	return root + q.String()
 }
